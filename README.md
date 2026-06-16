@@ -1,38 +1,80 @@
-# CodexPro
+<p align="center">
+  <img src="docs/favicon.svg" width="72" height="72" alt="CodexPro logo">
+</p>
 
-CodexPro turns ChatGPT Developer Mode into a local coding agent for the folder on your machine.
+<h1 align="center">CodexPro</h1>
 
-Run one command in a repo, paste the copied Server URL into ChatGPT Create App, and ChatGPT can inspect files, edit code, run safe verification commands, and hand work to Codex when you want that split.
+<p align="center">
+  Let ChatGPT web see your Codex-style repo context and act like a local coding agent.
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/codexpro"><img alt="npm" src="https://img.shields.io/npm/v/codexpro?style=flat-square"></a>
+  <a href="https://github.com/rebel0789/codexpro/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/rebel0789/codexpro/ci.yml?branch=main&style=flat-square"></a>
+  <a href="https://github.com/rebel0789/codexpro/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/rebel0789/codexpro?style=flat-square"></a>
+  <a href="https://rebel0789.github.io/codexpro/"><img alt="Website" src="https://img.shields.io/badge/site-GitHub%20Pages-67e8f9?style=flat-square"></a>
+</p>
+
+<p align="center">
+  <a href="https://rebel0789.github.io/codexpro/">Website</a>
+  ·
+  <a href="https://github.com/rebel0789/codexpro">Star on GitHub</a>
+  ·
+  <a href="https://www.npmjs.com/package/codexpro">npm</a>
+  ·
+  <a href="DOMAIN_SETUP.md">Stable URL guide</a>
+  ·
+  <a href="LAUNCH_COPY.md">Launch copy</a>
+  ·
+  <a href="SECURITY.md">Security</a>
+</p>
+
+CodexPro turns ChatGPT Developer Mode into a local coding agent for the folder on your machine. Run one command in a repo, paste the copied Server URL into ChatGPT Create App, and ChatGPT can inspect files, edit code, run safe verification commands, and load the same explicit context you normally give Codex through `AGENTS.md`, `.ai-bridge`, git status, git diff, and source files.
 
 ```bash
 npx codexpro@latest start
 ```
 
-Default workflow:
+## Why
 
 ```text
-1. Open a terminal in your project folder.
-2. Run npx codexpro@latest start.
-3. Paste the copied Server URL into ChatGPT Developer Mode -> Create App.
-4. Use the CodexPro app in ChatGPT as a coding agent.
+ChatGPT web can see Codex-style context:
+  AGENTS.md
+  .ai-bridge plans and status
+  git status and diff
+  selected source files
+
+ChatGPT web can act on your repo:
+  read files
+  write files
+  exact-edit files
+  search code
+  run safe verification commands
+
+Codex stays useful:
+  execute plans locally
+  handle deeper terminal-heavy work
+  review or continue a handoff
 ```
 
 What it gives you:
 
 ```text
-Agent mode    ChatGPT reads, writes, edits, searches, and verifies directly.
-Handoff mode  ChatGPT writes .ai-bridge/current-plan.md for Codex to execute.
-Pro mode      Export a durable context bundle for models that cannot call MCP tools.
-Stable URLs   Use a reserved ngrok domain or Cloudflare named tunnel so the ChatGPT app URL stays fixed.
+Normal coding mode  ChatGPT reads, writes, edits, searches, and verifies directly.
+Handoff mode        ChatGPT writes .ai-bridge/current-plan.md for Codex to execute.
+Pro planning mode   Export a durable context bundle for sessions that cannot call MCP tools.
+Stable URLs         Use a reserved ngrok domain or Cloudflare named tunnel so the ChatGPT app URL stays fixed.
 ```
+
+If your ChatGPT account exposes a stronger model in the web app, including any GPT-5.5-class model available to your account, CodexPro lets that model work against your local repo through MCP. CodexPro does not provide or unlock that model; it gives the ChatGPT session local coding tools and repo context.
 
 CodexPro is not an OS sandbox. It is a local developer bridge with safety defaults. Read [SECURITY.md](SECURITY.md) before exposing it through a tunnel.
 
 ## Status
 
-This project is pre-1.0. The protocol surface and widget design may change while the safety model settles.
+CodexPro is a public open-source MCP bridge with conservative defaults: workspace-only writes, safe bash by default, blocked secret paths, token-protected public URLs, and compact visual cards for high-signal code changes.
 
-CodexPro does not bypass, increase, or modify ChatGPT, Codex, or OpenAI rate limits. It gives you another workflow surface: ChatGPT can do MCP-backed agentic coding in your local repo, while Codex remains available for local execution, review, or handoff workflows. Model/tool availability and quota behavior are controlled by the product you connect it to.
+CodexPro does not bypass, increase, or modify ChatGPT, Codex, or OpenAI rate limits. It gives you another workflow surface: ChatGPT can do MCP-backed agentic coding in your local repo, while Codex remains available for terminal execution, review, or handoff workflows. Model/tool availability and quota behavior are controlled by the product you connect it to.
 
 ## Tools exposed to ChatGPT
 
@@ -91,7 +133,7 @@ codex_context
 
 This avoids the noisy "every tool call becomes a card" behavior. It follows the Apps SDK decoupled pattern: data-processing tools return normal tool results, while render-worthy tools attach the widget template.
 
-The visual cards are not unlocked by "agent mode" alone; the MCP server has to register an HTML resource with `text/html;profile=mcp-app` and point selected tool descriptors at it.
+The visual cards are not unlocked by "normal coding mode" alone; the MCP server has to register an HTML resource with `text/html;profile=mcp-app` and point selected tool descriptors at it.
 
 The widget sets both CSP metadata surfaces:
 
@@ -146,7 +188,7 @@ That is the intended low-friction path. It:
 - installs cloudflared into ~/.codexpro/bin if Cloudflare is selected and it is missing
 - waits for the public HTTPS tunnel URL
 - copies the exact ChatGPT Server URL to your clipboard
-- starts in agent mode with workspace edits enabled
+- starts in normal coding mode with workspace edits enabled
 - shows a compact terminal control panel
 - lets you press Enter to open ChatGPT in your browser
 - lets you press `o` to open a local setup/status page
@@ -293,7 +335,7 @@ Advanced controls such as `u` for printing the full URL, `p` for Create App fiel
 Startup modes:
 
 ```bash
-codexpro start                 # default agent mode: read/write/edit/search/bash
+codexpro start                 # normal coding mode: read/write/edit/search/bash
 codexpro setup                 # guided onboarding for new users
 codexpro start --mode handoff  # planning-only .ai-bridge handoff
 codexpro start --mode pro      # export context for models without MCP tools
@@ -732,7 +774,7 @@ Example MCP config:
 
 ## Write modes
 
-`CODEXPRO_WRITE_MODE=workspace` is the default agent mode. Use `handoff` when you want planning-only behavior and do not want ChatGPT to edit source files directly.
+`CODEXPRO_WRITE_MODE=workspace` is the default normal coding mode. Use `handoff` when you want planning-only behavior and do not want ChatGPT to edit source files directly.
 
 ```text
 off        write/edit tools are disabled; handoff_to_codex still writes .ai-bridge/current-plan.md
@@ -740,7 +782,7 @@ handoff    write/edit can only write inside .ai-bridge/
 workspace  write/edit can write workspace files, except blocked paths
 ```
 
-The launcher defaults to `workspace` in agent mode and `handoff` in handoff/pro modes.
+The launcher defaults to `workspace` in normal coding mode and `handoff` in handoff/pro planning modes.
 
 ## Bash modes
 
@@ -820,7 +862,7 @@ Keep .ai-bridge/decisions.md aligned with implementation choices. Do not overwri
 
 ## Demo prompt matching the screenshots
 
-Default `codexpro start` is already workspace-write agent mode.
+Default `codexpro start` is already workspace-write normal coding mode.
 
 ```text
 Use CodexPro.

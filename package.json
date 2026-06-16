@@ -11,7 +11,7 @@
   "bugs": {
     "url": "https://github.com/rebel0789/codexpro/issues"
   },
-  "homepage": "https://github.com/rebel0789/codexpro#readme",
+  "homepage": "https://rebel0789.github.io/codexpro/",
   "keywords": [
     "mcp",
     "chatgpt",
@@ -27,6 +27,7 @@
   },
   "files": [
     "dist",
+    "docs",
     "scripts",
     "README.md",
     "PUBLIC_LAUNCH_CHECKLIST.md",
@@ -34,6 +35,7 @@
     "LICENSE",
     "SECURITY.md",
     "CONTRIBUTING.md",
+    "LAUNCH_COPY.md",
     "CHANGELOG.md",
     "CHATGPT_PROMPT.md",
     "CODEX_PROMPT.md",
