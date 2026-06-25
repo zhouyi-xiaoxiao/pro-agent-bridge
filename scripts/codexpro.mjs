@@ -1637,18 +1637,8 @@ function commandDisplay(commandInfo) {
   return shellCommandPreview([commandInfo.command, ...(commandInfo.displayArgs ?? commandInfo.args)]);
 }
 
-function gitStatusPorcelain(root) {
-  const result = spawnSync('git', ['status', '--porcelain=v1'], {
-    cwd: root,
-    encoding: 'utf8',
-    maxBuffer: 1_000_000,
-    shell: false
-  });
-  if (result.status !== 0) {
-    const reason = result.stderr || result.stdout || `git status exited ${result.status}`;
-    throw new Error(`git status failed: ${redactForLog(reason).trim()}`);
-  }
-  return result.stdout || '';
+function gitStatusPorcelain(root, maxBytes = 1_000_000) {
+  return runGitText(root, ['status', '--porcelain=v1', '--untracked-files=all', '--', '.'], maxBytes);
 }
 
 function normalizedContextDir(contextDir) {
@@ -1657,6 +1647,10 @@ function normalizedContextDir(contextDir) {
 
 function normalizeStatusPath(value) {
   return String(value || '').replace(/^"|"$/g, '').replace(/\\"/g, '"');
+}
+
+function toPosixPath(value) {
+  return String(value || '').replace(/\\/g, '/');
 }
 
 function statusLinePaths(line) {
@@ -1669,15 +1663,45 @@ function statusLinePaths(line) {
   ];
 }
 
-function isContextStatusLine(line, contextDir) {
+function gitWorkspacePrefix(root) {
+  const topLevel = runGitText(root, ['rev-parse', '--show-toplevel'], 100_000).trim();
+  return toPosixPath(path.relative(topLevel, root)).replace(/\/+$/, '');
+}
+
+function workspacePathFromGitPath(filePath, workspacePrefix) {
+  const normalized = toPosixPath(filePath).replace(/^\.?\//, '');
+  const prefix = toPosixPath(workspacePrefix).replace(/\/+$/, '');
+  if (!prefix) return normalized;
+  if (normalized === prefix) return '';
+  if (normalized.startsWith(`${prefix}/`)) return normalized.slice(prefix.length + 1);
+  return null;
+}
+
+function statusLineWorkspacePaths(line, workspacePrefix) {
+  return statusLinePaths(line)
+    .map((filePath) => workspacePathFromGitPath(filePath, workspacePrefix))
+    .filter((filePath) => filePath !== null && filePath !== '');
+}
+
+function workspaceStatusLine(line, workspacePaths) {
+  return `${String(line || '').slice(0, 3)}${workspacePaths.join(' -> ')}`;
+}
+
+function isContextStatusLine(line, contextDir, workspacePrefix = '') {
   const context = normalizedContextDir(contextDir);
-  const paths = statusLinePaths(line);
+  const paths = statusLineWorkspacePaths(line, workspacePrefix);
   return paths.length > 0 && paths.every((filePath) => filePath === context || filePath.startsWith(`${context}/`));
 }
 
 function assertCleanGitStart(root, contextDir) {
   const status = gitStatusPorcelain(root);
-  const nonContextStatus = status.split(/\r?\n/).filter((line) => line.trim() && !isContextStatusLine(line, contextDir)).join('\n');
+  const workspacePrefix = gitWorkspacePrefix(root);
+  const nonContextStatus = status.split(/\r?\n/).map((line) => {
+    if (!line.trim()) return '';
+    const paths = statusLineWorkspacePaths(line, workspacePrefix);
+    if (!paths.length || paths.every(contextPathPredicate(contextDir))) return '';
+    return workspaceStatusLine(line, paths);
+  }).filter(Boolean).join('\n');
   if (nonContextStatus.trim()) {
     throw new Error(`--require-clean-git-start refused to start because the workspace has non-handoff changes:\n${nonContextStatus}`);
   }
@@ -1754,7 +1778,7 @@ function untrackedEntrySummary(root, relPath) {
 
 function untrackedFilesSummary(root, contextDir, maxBytes) {
   const context = normalizedContextDir(contextDir);
-  const output = runGitText(root, ['ls-files', '--others', '--exclude-standard', '-z'], 1_000_000);
+  const output = runGitText(root, ['ls-files', '--others', '--exclude-standard', '-z', '--', '.'], 1_000_000);
   const entries = output.split('\0').filter(Boolean).filter((relPath) => relPath !== context && !relPath.startsWith(`${context}/`));
   if (!entries.length) return '';
   const lines = [];
@@ -1809,14 +1833,16 @@ function pathStateForFingerprint(root, relPath, options = {}) {
 function changeFingerprintExcludingContext(root, contextDir) {
   const context = normalizedContextDir(contextDir);
   const isContextPath = contextPathPredicate(contextDir);
-  const status = runGitText(root, ['status', '--porcelain=v1', '--untracked-files=all'], 25_000_000);
+  const workspacePrefix = gitWorkspacePrefix(root);
+  const status = gitStatusPorcelain(root, 25_000_000);
   const stagedRaw = runGitText(root, ['diff', '--cached', '--raw', '-z', '--no-ext-diff', '--', '.', `:(exclude)${context}`], 25_000_000);
   const hash = createHash('sha256');
   hash.update(`staged-raw\0${stagedRaw}\0`);
   for (const line of status.split(/\r?\n/).filter(Boolean).sort()) {
-    const paths = statusLinePaths(line);
+    const paths = statusLineWorkspacePaths(line, workspacePrefix);
+    if (!paths.length) continue;
     if (paths.length && paths.every(isContextPath)) continue;
-    hash.update(`status\0${line}\0`);
+    hash.update(`status\0${workspaceStatusLine(line, paths)}\0`);
     const fullFileHash = !line.startsWith('?? ');
     for (const filePath of paths) {
       hash.update(`path\0${filePath}\0${pathStateForFingerprint(root, filePath, { fullFileHash })}\0`);

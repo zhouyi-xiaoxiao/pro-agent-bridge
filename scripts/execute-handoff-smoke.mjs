@@ -535,6 +535,115 @@ if (!repeatedSameLog.includes('"stop_reason":"no_files_changed"')) {
   throw new Error(`loop did not stop on repeated identical content write\nlog:\n${repeatedSameLog}`);
 }
 
+const subdirRepoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codexpro-loop-subdir-repo-'));
+const subdirRoot = path.join(subdirRepoRoot, 'packages', 'demo');
+await fs.mkdir(path.join(subdirRoot, '.ai-bridge'), { recursive: true });
+await fs.writeFile(path.join(subdirRoot, '.ai-bridge', 'current-plan.md'), '# Subdir plan\n\nAppend the first marker.\n', 'utf8');
+await fs.writeFile(path.join(subdirRoot, 'app.txt'), 'base\n', 'utf8');
+await fs.writeFile(path.join(subdirRoot, 'agent.mjs'), `
+import fs from 'node:fs';
+const planPath = process.argv[process.argv.indexOf('--task-file') + 1];
+const plan = fs.readFileSync(planPath, 'utf8');
+fs.appendFileSync('app.txt', plan.includes('second marker') ? 'second subdir change\\n' : 'first subdir change\\n');
+`, 'utf8');
+await fs.writeFile(path.join(subdirRoot, 'reviewer.mjs'), `
+import fs from 'node:fs';
+const planPath = process.argv[process.argv.indexOf('--plan-file') + 1];
+const app = fs.readFileSync('app.txt', 'utf8');
+if (app.includes('second subdir change')) {
+  console.log('CODEXPRO_REVIEW=PASS');
+} else if (app.includes('first subdir change')) {
+  fs.writeFileSync(planPath, '# Subdir follow-up\\n\\nAppend the second marker.\\n');
+  console.log('CODEXPRO_REVIEW=FAIL');
+} else {
+  process.exit(9);
+}
+`, 'utf8');
+requireSuccess(spawnSync('git', ['init'], { cwd: subdirRepoRoot, encoding: 'utf8' }), 'subdir repo git init');
+requireSuccess(spawnSync('git', ['add', 'packages/demo/app.txt', 'packages/demo/agent.mjs', 'packages/demo/reviewer.mjs'], { cwd: subdirRepoRoot, encoding: 'utf8' }), 'subdir repo git add');
+requireSuccess(spawnSync('git', ['-c', 'user.email=codexpro@example.invalid', '-c', 'user.name=CodexPro Smoke', 'commit', '-m', 'init'], { cwd: subdirRepoRoot, encoding: 'utf8' }), 'subdir repo git commit');
+
+const subdirRun = run([
+  'loop-handoff',
+  '--root',
+  subdirRoot,
+  '--agent',
+  'custom',
+  '--command',
+  `${quoteArg(process.execPath)} agent.mjs --task-file {{plan_file}}`,
+  '--review-command',
+  `${quoteArg(process.execPath)} reviewer.mjs --plan-file {{plan_file}}`,
+  '--max-iters',
+  '2',
+  '--require-clean-git-start',
+  '--stop-if-no-files-changed',
+  '--yes'
+]);
+requireSuccess(subdirRun, 'loop-handoff workspace nested below git top-level');
+
+const subdirUntrackedRepoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codexpro-loop-subdir-untracked-'));
+const subdirUntrackedRoot = path.join(subdirUntrackedRepoRoot, 'packages', 'demo');
+await fs.mkdir(path.join(subdirUntrackedRoot, '.ai-bridge'), { recursive: true });
+await fs.writeFile(path.join(subdirUntrackedRoot, '.ai-bridge', 'current-plan.md'), '# Untracked subdir plan\n\nShould not start.\n', 'utf8');
+await fs.writeFile(path.join(subdirUntrackedRoot, 'app.txt'), 'untracked workspace file\n', 'utf8');
+requireSuccess(spawnSync('git', ['init'], { cwd: subdirUntrackedRepoRoot, encoding: 'utf8' }), 'subdir untracked repo git init');
+
+const subdirUntrackedRun = run([
+  'loop-handoff',
+  '--root',
+  subdirUntrackedRoot,
+  '--agent',
+  'custom',
+  '--command',
+  `${quoteArg(process.execPath)} -e "process.exit(0)" --task-file {{plan_file}}`,
+  '--review-command',
+  `${quoteArg(process.execPath)} -e "console.log('CODEXPRO_REVIEW=PASS')" --plan-file {{plan_file}}`,
+  '--require-clean-git-start',
+  '--yes'
+]);
+if (subdirUntrackedRun.status === 0) {
+  throw new Error(`loop accepted untracked files under a nested workspace as clean\nstdout:\n${subdirUntrackedRun.stdout}\nstderr:\n${subdirUntrackedRun.stderr}`);
+}
+if (!subdirUntrackedRun.stderr.includes('--require-clean-git-start refused') || !subdirUntrackedRun.stderr.includes('app.txt')) {
+  throw new Error(`loop did not report nested untracked workspace file\nstdout:\n${subdirUntrackedRun.stdout}\nstderr:\n${subdirUntrackedRun.stderr}`);
+}
+
+const subdirOutsideUntrackedRepoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codexpro-loop-subdir-outside-untracked-'));
+const subdirOutsideUntrackedRoot = path.join(subdirOutsideUntrackedRepoRoot, 'packages', 'demo');
+await fs.mkdir(path.join(subdirOutsideUntrackedRoot, '.ai-bridge'), { recursive: true });
+await fs.writeFile(path.join(subdirOutsideUntrackedRoot, '.ai-bridge', 'current-plan.md'), '# Outside untracked plan\n\nAppend a marker.\n', 'utf8');
+await fs.writeFile(path.join(subdirOutsideUntrackedRoot, 'app.txt'), 'base\n', 'utf8');
+requireSuccess(spawnSync('git', ['init'], { cwd: subdirOutsideUntrackedRepoRoot, encoding: 'utf8' }), 'subdir outside untracked repo git init');
+requireSuccess(spawnSync('git', ['add', 'packages/demo/app.txt'], { cwd: subdirOutsideUntrackedRepoRoot, encoding: 'utf8' }), 'subdir outside untracked repo git add');
+requireSuccess(spawnSync('git', ['-c', 'user.email=codexpro@example.invalid', '-c', 'user.name=CodexPro Smoke', 'commit', '-m', 'init'], { cwd: subdirOutsideUntrackedRepoRoot, encoding: 'utf8' }), 'subdir outside untracked repo git commit');
+const outsideGeneratedDir = path.join(
+  subdirOutsideUntrackedRepoRoot,
+  'packages',
+  'generated',
+  'x'.repeat(170),
+  'y'.repeat(170),
+  'z'.repeat(170)
+);
+await fs.mkdir(outsideGeneratedDir, { recursive: true });
+const outsideFileSuffix = 'a'.repeat(110);
+for (let index = 0; index < 1800; index += 1) {
+  await fs.writeFile(path.join(outsideGeneratedDir, `${String(index).padStart(4, '0')}-${outsideFileSuffix}.txt`), 'outside workspace\n', 'utf8');
+}
+const subdirOutsideUntrackedRun = run([
+  'loop-handoff',
+  '--root',
+  subdirOutsideUntrackedRoot,
+  '--agent',
+  'custom',
+  '--command',
+  `${quoteArg(process.execPath)} -e "require('node:fs').appendFileSync('app.txt', 'workspace change\\n')" -- --task-file {{plan_file}}`,
+  '--review-command',
+  `${quoteArg(process.execPath)} -e "console.log('CODEXPRO_REVIEW=PASS')" -- --plan-file {{plan_file}}`,
+  '--require-clean-git-start',
+  '--yes'
+]);
+requireSuccess(subdirOutsideUntrackedRun, 'loop-handoff ignores large untracked tree outside nested workspace');
+
 const largeDirtyRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codexpro-loop-large-dirty-'));
 await fs.mkdir(path.join(largeDirtyRoot, '.ai-bridge'), { recursive: true });
 await fs.writeFile(path.join(largeDirtyRoot, '.ai-bridge', 'current-plan.md'), '# Large dirty plan\n\nAppend to later file.\n', 'utf8');
