@@ -15,6 +15,9 @@ The bridge does not unlock models, proxy model access, scrape ChatGPT, or bypass
 | `read_project_context` | Reads `.ai-bridge/project-context.md`, detailed plans, checklists, current handoff, agent status, diff, execution log, and recent saved chat memory. |
 | `search_project_memory` | Searches saved `.ai-bridge` memory and planning artifacts before a new plan is written. |
 | `save_chat_summary` | Appends an explicit ChatGPT-provided conversation summary, decisions, todos, links, and tags to `.ai-bridge/chat-memory.jsonl`; can promote the summary to `.ai-bridge/project-context.md`. |
+| `save_chat_session` | Saves one explicit structured chat transcript or raw transcript into `.ai-bridge/chat-sessions/`. |
+| `list_saved_chat_sessions` | Lists saved project-local chat sessions from `.ai-bridge/chat-session-index.jsonl`. |
+| `read_saved_chat_session` | Reads one saved chat session by `session_id` with bounded message and byte limits. |
 | `write_detailed_solution` | Writes `.ai-bridge/solution-plan.md`, `.ai-bridge/implementation-checklist.md`, and `.ai-bridge/review-criteria.md`; can also write `.ai-bridge/current-plan.md`. |
 | `handoff_to_claude_code` | Writes `.ai-bridge/current-plan.md` for Claude Code execution and returns a plan hash plus watcher command. |
 | `handoff_poll` | Read-only polling of `.ai-bridge/handoff-run-state.json`, agent status, implementation diff, and execution log. |
@@ -71,7 +74,8 @@ This fork does not automatically read all ChatGPT web conversations. That is int
 - ChatGPT's web chat history is not exposed as a general MCP data source by CodexPro.
 - Reading private account history by browser scraping would be fragile and may violate product boundaries.
 - The safe path is explicit memory: ask ChatGPT Pro to summarize the current conversation and call `save_chat_summary`.
-- For old chats, export or manually summarize the relevant parts, then save them into `.ai-bridge/chat-memory.jsonl` or `.ai-bridge/project-context.md`.
+- For a single current or exported chat, call `save_chat_session` with structured `messages` or a raw `transcript`, then retrieve it later with `read_saved_chat_session`.
+- For old chats, export or manually summarize the relevant parts, then save them into `.ai-bridge/chat-memory.jsonl`, `.ai-bridge/chat-sessions/`, or `.ai-bridge/project-context.md`.
 
 This still helps a lot: future ChatGPT Pro, Codex, and Claude Code runs can read durable project decisions without relying on one hidden web transcript.
 
@@ -80,6 +84,8 @@ This still helps a lot: future ChatGPT Pro, Codex, and Claude Code runs can read
 ```text
 project-context.md
 chat-memory.jsonl
+chat-session-index.jsonl
+chat-sessions/
 solution-plan.md
 implementation-checklist.md
 review-criteria.md

@@ -240,6 +240,9 @@ const STANDARD_TOOL_NAMES = [
   "read_project_context",
   "search_project_memory",
   "save_chat_summary",
+  "save_chat_session",
+  "list_saved_chat_sessions",
+  "read_saved_chat_session",
   "write_detailed_solution",
   "read_handoff",
   "export_pro_context",
@@ -269,6 +272,9 @@ const FULL_TOOL_NAMES = [
   "read_project_context",
   "search_project_memory",
   "save_chat_summary",
+  "save_chat_session",
+  "list_saved_chat_sessions",
+  "read_saved_chat_session",
   "write_detailed_solution",
   "read_handoff",
   "codex_context",
@@ -462,7 +468,7 @@ async function readOptionalWorkspaceFile(
   maxBytes = config.maxReadBytes
 ): Promise<string> {
   try {
-    return await readRawTextFileBounded(config, guard, workspace, relPath);
+    return await readRawTextFileBounded(config, guard, workspace, relPath, maxBytes);
   } catch (error) {
     if (error instanceof CodexProError) return "";
     throw error;
@@ -493,6 +499,191 @@ function parseJsonl(text: string): Record<string, unknown>[] {
     }
   }
   return rows;
+}
+
+function normalizeSessionProvider(value: unknown): string {
+  const provider = cleanOneLine(value, "chatgpt", 40).toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return provider || "chatgpt";
+}
+
+function normalizeChatSessionId(value: unknown, seed: string): string {
+  const raw = String(value ?? "").trim();
+  const cleaned = raw.replace(/[^A-Za-z0-9._:-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 120);
+  if (cleaned && cleaned !== "." && cleaned !== ".." && !cleaned.includes("..")) return cleaned;
+  return `session-${sha256Hex(seed).slice(0, 16)}`;
+}
+
+function normalizeChatRole(value: unknown): string {
+  const role = cleanOneLine(value, "unknown", 32).toLowerCase();
+  return /^[a-z][a-z0-9_-]{0,31}$/.test(role) ? role : "unknown";
+}
+
+function normalizeChatTimestamp(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return new Date(value).toISOString();
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+  }
+  return undefined;
+}
+
+type SavedChatSessionMessage = {
+  type: "message";
+  index: number;
+  role: string;
+  content: string;
+  ts?: string;
+};
+
+function normalizeChatSessionMessages(args: any): SavedChatSessionMessage[] {
+  const messages: SavedChatSessionMessage[] = [];
+  const rawMessages = Array.isArray(args.messages) ? args.messages : [];
+  for (const item of rawMessages) {
+    if (!item || typeof item !== "object") continue;
+    const content = String((item as { content?: unknown }).content ?? "").trim();
+    if (!content) continue;
+    messages.push({
+      type: "message",
+      index: messages.length,
+      role: normalizeChatRole((item as { role?: unknown }).role),
+      content,
+      ...(normalizeChatTimestamp((item as { ts?: unknown; timestamp?: unknown }).ts ?? (item as { timestamp?: unknown }).timestamp)
+        ? { ts: normalizeChatTimestamp((item as { ts?: unknown; timestamp?: unknown }).ts ?? (item as { timestamp?: unknown }).timestamp) }
+        : {})
+    });
+    if (messages.length >= 500) break;
+  }
+
+  const transcript = String(args.transcript ?? "").trim();
+  if (!messages.length && transcript) {
+    messages.push({ type: "message", index: 0, role: "transcript", content: transcript });
+  }
+  if (!messages.length) throw new CodexProError("messages or transcript must contain at least one non-empty item.");
+  return messages;
+}
+
+function chatSessionFilePath(config: CodexProConfig, provider: string, sessionId: string): string {
+  return `${config.contextDir}/chat-sessions/${provider}-${sessionId}.jsonl`;
+}
+
+function chatSessionIndexPath(config: CodexProConfig): string {
+  return `${config.contextDir}/chat-session-index.jsonl`;
+}
+
+function sessionDisplayTitle(value: unknown, fallback: string): string {
+  return cleanOneLine(value, fallback, 160);
+}
+
+function chatSessionHeader(args: {
+  provider: string;
+  sessionId: string;
+  title: string;
+  sourceUrl?: string;
+  tags: string[];
+  messageCount: number;
+}): Record<string, unknown> {
+  return {
+    type: "session_meta",
+    ts: new Date().toISOString(),
+    provider: args.provider,
+    session_id: args.sessionId,
+    title: args.title,
+    source_url: args.sourceUrl,
+    tags: args.tags,
+    message_count: args.messageCount
+  };
+}
+
+function formatSavedChatSessionText(meta: Record<string, unknown>, messages: SavedChatSessionMessage[], truncated: boolean): string {
+  const transcript = messages.map((message) => {
+    const when = message.ts ? ` ${message.ts}` : "";
+    return `### ${message.role}${when}\n\n${message.content}`;
+  }).join("\n\n");
+  return [
+    "# Saved Chat Session",
+    "",
+    `Provider: ${meta.provider ?? "unknown"}`,
+    `Session: ${meta.session_id ?? "unknown"}`,
+    meta.title ? `Title: ${meta.title}` : "",
+    meta.source_url ? `Source: ${meta.source_url}` : "",
+    truncated ? "Transcript truncated by configured limits." : "",
+    "",
+    "## Transcript",
+    "",
+    transcript || "No readable transcript messages found."
+  ].filter((line) => line !== "").join("\n");
+}
+
+function parseSavedChatSession(text: string, maxMessages: number, maxTotalBytes: number): {
+  meta: Record<string, unknown>;
+  messages: SavedChatSessionMessage[];
+  truncated: boolean;
+  totalMessages: number;
+} {
+  let meta: Record<string, unknown> = {};
+  const messages: SavedChatSessionMessage[] = [];
+  let totalMessages = 0;
+  let usedBytes = 0;
+  let truncated = false;
+  for (const row of parseJsonl(text)) {
+    if (row.type === "session_meta") {
+      meta = row;
+      continue;
+    }
+    if (row.type !== "message") continue;
+    totalMessages += 1;
+    const content = String(row.content ?? "");
+    const nextBytes = Buffer.byteLength(content, "utf8");
+    if (messages.length >= maxMessages || usedBytes + nextBytes > maxTotalBytes) {
+      truncated = true;
+      continue;
+    }
+    usedBytes += nextBytes;
+    messages.push({
+      type: "message",
+      index: Number(row.index ?? messages.length),
+      role: normalizeChatRole(row.role),
+      content,
+      ...(typeof row.ts === "string" ? { ts: row.ts } : {})
+    });
+  }
+  return { meta, messages, truncated, totalMessages };
+}
+
+async function readChatSessionIndex(
+  config: CodexProConfig,
+  guard: PathGuard,
+  workspace: Workspace
+): Promise<Record<string, unknown>[]> {
+  const raw = await readOptionalWorkspaceFile(config, guard, workspace, chatSessionIndexPath(config), 500_000);
+  return parseJsonl(raw);
+}
+
+async function resolveSavedChatSessionPath(
+  config: CodexProConfig,
+  guard: PathGuard,
+  workspace: Workspace,
+  sessionId: string,
+  provider?: string
+): Promise<{ relPath: string; provider: string }> {
+  const wantedProvider = provider ? normalizeSessionProvider(provider) : "";
+  const index = await readChatSessionIndex(config, guard, workspace);
+  const match = [...index].reverse().find((row) => {
+    if (String(row.session_id ?? "") !== sessionId) return false;
+    if (wantedProvider && String(row.provider ?? "") !== wantedProvider) return false;
+    return typeof row.path === "string" && row.path;
+  });
+  if (match) {
+    const relPath = String(match.path);
+    const normalized = relPath.replace(/\\/g, "/").replace(/^\.\//, "");
+    const sessionDir = `${config.contextDir.replace(/^\.\//, "").replace(/\/+$/, "")}/chat-sessions/`;
+    if (!normalized.startsWith(sessionDir) || normalized.includes("../")) {
+      throw new CodexProError("Saved chat session index path is outside .ai-bridge/chat-sessions.");
+    }
+    return { relPath: normalized, provider: String(match.provider ?? (wantedProvider || "chatgpt")) };
+  }
+  const resolvedProvider = wantedProvider || "chatgpt";
+  return { relPath: chatSessionFilePath(config, resolvedProvider, normalizeChatSessionId(sessionId, sessionId)), provider: resolvedProvider };
 }
 
 function formatProjectContext(summary: string, decisions: string[], todos: string[], links: string[]): string {
@@ -896,6 +1087,7 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
       const maxChars = limitInt(args.max_chars, 40_000, 4_000, 120_000);
       const files = [
         `${config.contextDir}/project-context.md`,
+        `${config.contextDir}/chat-session-index.jsonl`,
         `${config.contextDir}/solution-plan.md`,
         `${config.contextDir}/implementation-checklist.md`,
         `${config.contextDir}/review-criteria.md`,
@@ -968,6 +1160,7 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
       const memoryFiles = [
         `${config.contextDir}/project-context.md`,
         `${config.contextDir}/chat-memory.jsonl`,
+        `${config.contextDir}/chat-session-index.jsonl`,
         `${config.contextDir}/solution-plan.md`,
         `${config.contextDir}/implementation-checklist.md`,
         `${config.contextDir}/review-criteria.md`,
@@ -1191,6 +1384,232 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
         validation_count: validation.length,
         risk_count: risks.length,
         solution_sha256: solution.sha256
+      });
+    }
+  );
+
+  registerCodexTool(
+    config,
+    server,
+    "save_chat_session",
+    {
+      title: "Save Chat Session",
+      description:
+        "Persist one explicit ChatGPT Pro or other chat session transcript into .ai-bridge/chat-sessions. The model/user must provide the transcript or messages; CodexPro does not scrape ChatGPT web history.",
+      inputSchema: {
+        workspace_id: z.string().optional().describe("Workspace id from open_workspace. Omit to use default workspace."),
+        provider: z.string().optional().describe("Session provider label. Default: chatgpt."),
+        session_id: z.string().optional().describe("Stable session id, such as the ChatGPT /c/<id> value. Unsafe characters are normalized."),
+        title: z.string().optional().describe("Human-readable session title."),
+        source_url: z.string().optional().describe("Optional source URL for the session."),
+        tags: z.array(z.string()).optional().describe("Search tags."),
+        messages: z.array(z.object({
+          role: z.string().optional(),
+          content: z.string(),
+          ts: z.union([z.string(), z.number()]).optional(),
+          timestamp: z.union([z.string(), z.number()]).optional()
+        })).optional().describe("Ordered session messages to persist."),
+        transcript: z.string().optional().describe("Fallback raw transcript text if structured messages are unavailable."),
+        append: z.boolean().optional().describe("Append messages to an existing saved session instead of replacing it. Default: false.")
+      },
+      annotations: HANDOFF_WRITE_ANNOTATIONS,
+      _meta: {
+        ...toolCardMeta(),
+        "openai/toolInvocation/invoking": "Saving chat session...",
+        "openai/toolInvocation/invoked": "Chat session saved"
+      }
+    },
+    async (args) => {
+      const workspace = workspaces.getWorkspace(args.workspace_id);
+      await ensureAiBridge(config, guard, workspace);
+      const messages = normalizeChatSessionMessages(args);
+      const provider = normalizeSessionProvider(args.provider);
+      const seed = JSON.stringify({ provider, title: args.title, sourceUrl: args.source_url, messages: messages.slice(0, 8) });
+      const sessionId = normalizeChatSessionId(args.session_id, seed);
+      const title = sessionDisplayTitle(args.title, sessionId);
+      const sourceUrl = String(args.source_url ?? "").trim() || undefined;
+      const tags = normalizeList(args.tags, 60);
+      const sessionPath = chatSessionFilePath(config, provider, sessionId);
+      const indexPath = chatSessionIndexPath(config);
+      const resolved = guard.resolve(workspace, sessionPath, { forWrite: true });
+      await fsp.mkdir(path.dirname(resolved.absPath), { recursive: true });
+
+      const existing = parseBool(args.append, false)
+        ? await readOptionalWorkspaceFile(config, guard, workspace, sessionPath, config.maxWriteBytes)
+        : "";
+      let startIndex = 0;
+      if (existing) {
+        const parsed = parseSavedChatSession(existing, 500, config.maxWriteBytes);
+        startIndex = parsed.totalMessages;
+      }
+      const renumbered = messages.map((message, offset) => ({ ...message, index: startIndex + offset }));
+      const header = chatSessionHeader({ provider, sessionId, title, sourceUrl, tags, messageCount: startIndex + renumbered.length });
+      const bodyRows = [
+        ...(existing ? [] : [header]),
+        ...renumbered
+      ].map((row) => JSON.stringify(row)).join("\n") + "\n";
+      const nextSize = Buffer.byteLength(existing, "utf8") + Buffer.byteLength(bodyRows, "utf8");
+      if (nextSize > config.maxWriteBytes) {
+        throw new CodexProError(`Saved chat session would exceed CODEXPRO_MAX_WRITE_BYTES (${config.maxWriteBytes}).`);
+      }
+      if (existing) await fsp.appendFile(resolved.absPath, bodyRows, "utf8");
+      else await fsp.writeFile(resolved.absPath, bodyRows, "utf8");
+
+      const indexEvent = {
+        ts: new Date().toISOString(),
+        provider,
+        session_id: sessionId,
+        title,
+        source_url: sourceUrl,
+        tags,
+        message_count: startIndex + renumbered.length,
+        path: sessionPath,
+        sha256: sha256Hex(existing + bodyRows)
+      };
+      await appendWorkspaceJsonl(config, guard, workspace, indexPath, indexEvent);
+      const text = [
+        "# Save Chat Session",
+        "",
+        `Provider: ${provider}`,
+        `Session: ${sessionId}`,
+        `Title: ${title}`,
+        `Path: ${sessionPath}`,
+        `Messages saved this call: ${renumbered.length}`,
+        `Total messages recorded: ${startIndex + renumbered.length}`,
+        "",
+        "Use read_saved_chat_session with this session_id to retrieve the bounded transcript."
+      ].join("\n");
+      return textResult(text, {
+        workspace_id: workspace.id,
+        root: workspace.root,
+        provider,
+        session_id: sessionId,
+        title,
+        source_url: sourceUrl ?? null,
+        path: sessionPath,
+        index_path: indexPath,
+        messages_saved: renumbered.length,
+        message_count: startIndex + renumbered.length,
+        appended: Boolean(existing),
+        sha256: indexEvent.sha256
+      });
+    }
+  );
+
+  registerCodexTool(
+    config,
+    server,
+    "list_saved_chat_sessions",
+    {
+      title: "List Saved Chat Sessions",
+      description:
+        "List explicit chat sessions saved in .ai-bridge/chat-session-index.jsonl. This is project-local memory, not automatic ChatGPT web history.",
+      inputSchema: {
+        workspace_id: z.string().optional().describe("Workspace id from open_workspace. Omit to use default workspace."),
+        provider: z.string().optional().describe("Optional provider filter, e.g. chatgpt."),
+        query: z.string().optional().describe("Optional case-insensitive search over session id, title, URL, tags, and path."),
+        max_sessions: z.number().int().min(1).max(200).optional().describe("Maximum sessions to return. Default: 30.")
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+      _meta: {
+        ...toolCardMeta(),
+        "openai/toolInvocation/invoking": "Listing saved chat sessions...",
+        "openai/toolInvocation/invoked": "Saved chat sessions ready"
+      }
+    },
+    async (args) => {
+      const workspace = workspaces.getWorkspace(args.workspace_id);
+      const provider = args.provider ? normalizeSessionProvider(args.provider) : "";
+      const query = String(args.query ?? "").trim().toLowerCase();
+      const maxSessions = limitInt(args.max_sessions, 30, 1, 200);
+      const rows = await readChatSessionIndex(config, guard, workspace);
+      const latest = new Map<string, Record<string, unknown>>();
+      for (const row of rows) {
+        const rowProvider = String(row.provider ?? "");
+        const rowSessionId = String(row.session_id ?? "");
+        if (!rowProvider || !rowSessionId) continue;
+        if (provider && rowProvider !== provider) continue;
+        const haystack = [
+          row.provider,
+          row.session_id,
+          row.title,
+          row.source_url,
+          Array.isArray(row.tags) ? row.tags.join(" ") : "",
+          row.path
+        ].filter(Boolean).join("\n").toLowerCase();
+        if (query && !haystack.includes(query)) continue;
+        latest.set(`${rowProvider}:${rowSessionId}`, row);
+      }
+      const sessions = [...latest.values()]
+        .sort((a, b) => String(b.ts ?? "").localeCompare(String(a.ts ?? "")))
+        .slice(0, maxSessions);
+      const list = sessions.length
+        ? sessions.map((row) => `- ${row.provider}:${row.session_id}  ${row.title || "(untitled)"}  messages=${row.message_count ?? "?"}`).join("\n")
+        : "- No saved chat sessions found.";
+      return textResult(`# Saved Chat Sessions\n\n${list}`, {
+        workspace_id: workspace.id,
+        root: workspace.root,
+        sessions,
+        session_count: sessions.length,
+        total_index_rows: rows.length
+      });
+    }
+  );
+
+  registerCodexTool(
+    config,
+    server,
+    "read_saved_chat_session",
+    {
+      title: "Read Saved Chat Session",
+      description:
+        "Read one explicit project-local chat session saved by save_chat_session. Requires a session_id; output is bounded by message and byte limits.",
+      inputSchema: {
+        workspace_id: z.string().optional().describe("Workspace id from open_workspace. Omit to use default workspace."),
+        provider: z.string().optional().describe("Optional provider label. If omitted, the saved index is searched first."),
+        session_id: z.string().describe("Saved session id returned by save_chat_session or list_saved_chat_sessions."),
+        max_messages: z.number().int().min(1).max(500).optional().describe("Maximum messages to return. Default: 120."),
+        max_total_bytes: z.number().int().min(4000).max(800000).optional().describe("Maximum transcript bytes to return. Default: 120000.")
+      },
+      annotations: SESSION_READ_ANNOTATIONS,
+      _meta: {
+        ...toolCardMeta(),
+        "openai/toolInvocation/invoking": "Reading saved chat session...",
+        "openai/toolInvocation/invoked": "Saved chat session read"
+      }
+    },
+    async (args) => {
+      const workspace = workspaces.getWorkspace(args.workspace_id);
+      const sessionId = String(args.session_id ?? "").trim();
+      if (!sessionId) throw new CodexProError("session_id is required.");
+      const { relPath, provider } = await resolveSavedChatSessionPath(config, guard, workspace, sessionId, args.provider);
+      const maxMessages = limitInt(args.max_messages, 120, 1, 500);
+      const maxTotalBytes = limitInt(args.max_total_bytes, 120_000, 4_000, 800_000);
+      const raw = await readRawTextFileBounded(config, guard, workspace, relPath, Math.min(maxTotalBytes * 2, config.maxReadBytes));
+      const parsed = parseSavedChatSession(raw, maxMessages, maxTotalBytes);
+      if (!parsed.meta.session_id) {
+        parsed.meta = {
+          type: "session_meta",
+          provider,
+          session_id: sessionId,
+          title: sessionId,
+          path: relPath
+        };
+      }
+      const text = formatSavedChatSessionText(parsed.meta, parsed.messages, parsed.truncated);
+      return textResult(text, {
+        workspace_id: workspace.id,
+        root: workspace.root,
+        provider: parsed.meta.provider ?? provider,
+        session_id: parsed.meta.session_id ?? sessionId,
+        title: parsed.meta.title ?? null,
+        source_url: parsed.meta.source_url ?? null,
+        path: relPath,
+        messages: parsed.messages,
+        message_count: parsed.messages.length,
+        total_messages: parsed.totalMessages,
+        truncated: parsed.truncated,
+        sha256: sha256Hex(raw)
       });
     }
   );

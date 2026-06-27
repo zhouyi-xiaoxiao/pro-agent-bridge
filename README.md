@@ -190,6 +190,9 @@ Standard mode exposes:
 - `read_project_context` — read durable project memory, detailed plans, checklists, current handoff, agent status, diff, execution log, and recent saved chat summaries.
 - `search_project_memory` — search saved `.ai-bridge` memory and planning artifacts before writing a new plan.
 - `save_chat_summary` — persist an explicit ChatGPT-provided conversation summary, decisions, todos, links, and tags.
+- `save_chat_session` — persist one explicit ChatGPT Pro or other chat transcript into `.ai-bridge/chat-sessions/`.
+- `list_saved_chat_sessions` — list project-local saved chat sessions by provider, title, tags, and session id.
+- `read_saved_chat_session` — read one saved chat session by `session_id` with bounded message and byte limits.
 - `write_detailed_solution` — write an implementation-ready solution plan, checklist, and review criteria into `.ai-bridge`.
 - `handoff_to_claude_code` — write a Claude Code handoff plan and return the watcher command plus plan hash.
 - `handoff_poll` — poll local handoff state, status, diff, and execution log for review.

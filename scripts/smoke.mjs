@@ -145,7 +145,7 @@ await client.request('initialize', {
 client.notify('notifications/initialized');
 const tools = await client.request('tools/list', {});
 const toolNames = tools.tools.map((tool) => tool.name);
-for (const expected of ['server_config', 'codexpro_self_test', 'codexpro_inventory', 'list_workspaces', 'open_current_workspace', 'open_workspace', 'workspace_snapshot', 'tree', 'search', 'load_skill', 'read_project_context', 'search_project_memory', 'save_chat_summary', 'write_detailed_solution', 'read', 'write', 'edit', 'bash', 'git_status', 'git_diff', 'show_changes', 'read_handoff', 'codex_context', 'handoff_to_agent', 'handoff_to_claude_code', 'handoff_poll', 'handoff_to_codex', 'export_pro_context']) {
+for (const expected of ['server_config', 'codexpro_self_test', 'codexpro_inventory', 'list_workspaces', 'open_current_workspace', 'open_workspace', 'workspace_snapshot', 'tree', 'search', 'load_skill', 'read_project_context', 'search_project_memory', 'save_chat_summary', 'save_chat_session', 'list_saved_chat_sessions', 'read_saved_chat_session', 'write_detailed_solution', 'read', 'write', 'edit', 'bash', 'git_status', 'git_diff', 'show_changes', 'read_handoff', 'codex_context', 'handoff_to_agent', 'handoff_to_claude_code', 'handoff_poll', 'handoff_to_codex', 'export_pro_context']) {
   if (!toolNames.includes(expected)) throw new Error(`missing tool: ${expected}`);
 }
 const toolCardUri = 'ui://widget/codexpro-tool-card-v9.html';
@@ -378,6 +378,76 @@ const savedSummary = await client.request('tools/call', {
 if (!savedSummary.structuredContent.written?.includes?.('.ai-bridge/chat-memory.jsonl')) {
   throw new Error(`save_chat_summary wrote unexpected path: ${JSON.stringify(savedSummary.structuredContent)}`);
 }
+const savedChatSession = await client.request('tools/call', {
+  name: 'save_chat_session',
+  arguments: {
+    workspace_id: ws,
+    provider: 'chatgpt',
+    session_id: '../smoke session/one',
+    title: 'Smoke ChatGPT Pro session',
+    source_url: 'https://chatgpt.com/c/smoke-session-one',
+    tags: ['smoke', 'single-session'],
+    messages: [
+      { role: 'user', content: 'Please remember this single session durable history.', ts: '2026-06-27T00:00:00Z' },
+      { role: 'assistant', content: 'I will save it through the explicit session bridge.', ts: '2026-06-27T00:00:01Z' },
+      { role: 'user', content: 'Now read the exact saved session back.', ts: '2026-06-27T00:00:02Z' }
+    ]
+  }
+});
+if (savedChatSession.structuredContent.session_id.includes('..') || !savedChatSession.structuredContent.path?.startsWith?.('.ai-bridge/chat-sessions/chatgpt-')) {
+  throw new Error(`save_chat_session did not normalize unsafe session path: ${JSON.stringify(savedChatSession.structuredContent)}`);
+}
+const savedSessionList = await client.request('tools/call', { name: 'list_saved_chat_sessions', arguments: { workspace_id: ws, query: 'single-session' } });
+if (!savedSessionList.structuredContent.sessions?.some?.((session) => session.session_id === savedChatSession.structuredContent.session_id)) {
+  throw new Error(`list_saved_chat_sessions missed saved session: ${JSON.stringify(savedSessionList.structuredContent)}`);
+}
+const savedSessionRead = await client.request('tools/call', {
+  name: 'read_saved_chat_session',
+  arguments: {
+    workspace_id: ws,
+    session_id: savedChatSession.structuredContent.session_id,
+    max_messages: 10
+  }
+});
+const savedSessionText = savedSessionRead.content?.[0]?.text ?? '';
+if (!savedSessionText.includes('single session durable history') || savedSessionRead.structuredContent.message_count !== 3) {
+  throw new Error(`read_saved_chat_session did not return saved transcript: ${savedSessionText}`);
+}
+const truncatedSessionRead = await client.request('tools/call', {
+  name: 'read_saved_chat_session',
+  arguments: {
+    workspace_id: ws,
+    session_id: savedChatSession.structuredContent.session_id,
+    max_messages: 1
+  }
+});
+if (!truncatedSessionRead.structuredContent.truncated || truncatedSessionRead.structuredContent.message_count !== 1 || truncatedSessionRead.structuredContent.total_messages !== 3) {
+  throw new Error(`read_saved_chat_session did not report bounded truncation: ${JSON.stringify(truncatedSessionRead.structuredContent)}`);
+}
+await client.request('tools/call', {
+  name: 'save_chat_session',
+  arguments: {
+    workspace_id: ws,
+    session_id: savedChatSession.structuredContent.session_id,
+    messages: [{ role: 'assistant', content: 'Appended session audit marker.' }],
+    append: true
+  }
+});
+const appendedSessionRead = await client.request('tools/call', {
+  name: 'read_saved_chat_session',
+  arguments: {
+    workspace_id: ws,
+    session_id: savedChatSession.structuredContent.session_id,
+    max_messages: 10
+  }
+});
+if (appendedSessionRead.structuredContent.total_messages !== 4 || !appendedSessionRead.content?.[0]?.text?.includes('Appended session audit marker')) {
+  throw new Error(`save_chat_session append did not preserve existing transcript: ${JSON.stringify(appendedSessionRead.structuredContent)}`);
+}
+await expectToolError('read_saved_chat_session', {
+  workspace_id: ws,
+  session_id: 'missing-session-id'
+}, /not found|no such file|ENOENT/i);
 const detailedSolution = await client.request('tools/call', {
   name: 'write_detailed_solution',
   arguments: {
