@@ -1,4 +1,5 @@
 import fsp from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -236,9 +237,15 @@ const STANDARD_TOOL_NAMES = [
   "tree",
   "search",
   "load_skill",
+  "read_project_context",
+  "search_project_memory",
+  "save_chat_summary",
+  "write_detailed_solution",
   "read_handoff",
   "export_pro_context",
-  "handoff_to_agent"
+  "handoff_to_agent",
+  "handoff_to_claude_code",
+  "handoff_poll"
 ] as const;
 
 const FULL_TOOL_NAMES = [
@@ -259,10 +266,16 @@ const FULL_TOOL_NAMES = [
   "git_status",
   "git_diff",
   "show_changes",
+  "read_project_context",
+  "search_project_memory",
+  "save_chat_summary",
+  "write_detailed_solution",
   "read_handoff",
   "codex_context",
   "export_pro_context",
   "handoff_to_agent",
+  "handoff_to_claude_code",
+  "handoff_poll",
   "handoff_to_codex"
 ] as const;
 
@@ -416,6 +429,232 @@ function previewText(value: string, maxLines = 40, maxChars = 12_000): string {
   return lines.length > maxChars ? `${lines.slice(0, maxChars)}\n...[preview truncated]` : lines;
 }
 
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function truncateText(value: string, maxChars: number): { text: string; truncated: boolean } {
+  if (value.length <= maxChars) return { text: value, truncated: false };
+  return { text: `${value.slice(0, Math.max(0, maxChars))}\n...[truncated]`, truncated: true };
+}
+
+function normalizeList(value: unknown, maxItems = 80): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item ?? "").trim())
+    .filter(Boolean)
+    .slice(0, maxItems);
+}
+
+function bulletList(items: string[], fallback = "- None specified."): string {
+  return items.length ? items.map((item) => `- ${item}`).join("\n") : fallback;
+}
+
+function numberedList(items: string[], fallback = "1. No steps specified."): string {
+  return items.length ? items.map((item, index) => `${index + 1}. ${item}`).join("\n") : fallback;
+}
+
+async function readOptionalWorkspaceFile(
+  config: CodexProConfig,
+  guard: PathGuard,
+  workspace: Workspace,
+  relPath: string,
+  maxBytes = config.maxReadBytes
+): Promise<string> {
+  try {
+    return await readRawTextFileBounded(config, guard, workspace, relPath);
+  } catch (error) {
+    if (error instanceof CodexProError) return "";
+    throw error;
+  }
+}
+
+async function appendWorkspaceJsonl(
+  config: CodexProConfig,
+  guard: PathGuard,
+  workspace: Workspace,
+  relPath: string,
+  event: Record<string, unknown>
+): Promise<void> {
+  const resolved = guard.resolve(workspace, relPath, { forWrite: true });
+  await fsp.mkdir(path.dirname(resolved.absPath), { recursive: true });
+  await fsp.appendFile(resolved.absPath, `${JSON.stringify(event)}\n`, "utf8");
+}
+
+function parseJsonl(text: string): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) rows.push(parsed);
+    } catch {
+      // Ignore malformed legacy lines; search still covers markdown files.
+    }
+  }
+  return rows;
+}
+
+function formatProjectContext(summary: string, decisions: string[], todos: string[], links: string[]): string {
+  return [
+    "# Project Context",
+    "",
+    `Updated: ${new Date().toISOString()}`,
+    "",
+    "## Current Summary",
+    "",
+    summary.trim() || "No summary saved yet.",
+    "",
+    "## Stable Decisions",
+    "",
+    bulletList(decisions),
+    "",
+    "## Open Todos",
+    "",
+    bulletList(todos),
+    "",
+    "## Useful Links Or Handles",
+    "",
+    bulletList(links)
+  ].join("\n");
+}
+
+function buildDetailedSolutionMarkdown(options: {
+  title: string;
+  objective: string;
+  nonGoals: string[];
+  systemUnderstanding: string;
+  evidence: string[];
+  recommendedApproach: string;
+  alternatives: string[];
+  implementationSteps: string[];
+  filesToChange: string[];
+  validation: string[];
+  risks: string[];
+  rollback: string[];
+  handoffPrompt: string;
+}): string {
+  return [
+    `# ${options.title}`,
+    "",
+    `Updated: ${new Date().toISOString()}`,
+    "",
+    "## Objective",
+    "",
+    options.objective.trim() || "No objective supplied.",
+    "",
+    "## Non Goals",
+    "",
+    bulletList(options.nonGoals),
+    "",
+    "## Current System Understanding",
+    "",
+    options.systemUnderstanding.trim() || "No system understanding supplied.",
+    "",
+    "## Evidence And Context",
+    "",
+    bulletList(options.evidence),
+    "",
+    "## Recommended Approach",
+    "",
+    options.recommendedApproach.trim() || "No recommended approach supplied.",
+    "",
+    "## Alternatives Considered",
+    "",
+    bulletList(options.alternatives),
+    "",
+    "## Implementation Steps",
+    "",
+    numberedList(options.implementationSteps),
+    "",
+    "## Files To Change Or Inspect",
+    "",
+    bulletList(options.filesToChange),
+    "",
+    "## Validation Plan",
+    "",
+    bulletList(options.validation),
+    "",
+    "## Risks",
+    "",
+    bulletList(options.risks),
+    "",
+    "## Rollback Plan",
+    "",
+    bulletList(options.rollback),
+    "",
+    "## Executor Handoff Prompt",
+    "",
+    "```text",
+    options.handoffPrompt.trim() || "Read this solution plan, implement in small steps, run validation, and report changes.",
+    "```",
+    ""
+  ].join("\n");
+}
+
+function buildChecklistMarkdown(title: string, steps: string[], validation: string[]): string {
+  return [
+    `# ${title} Checklist`,
+    "",
+    `Updated: ${new Date().toISOString()}`,
+    "",
+    "## Implementation",
+    "",
+    steps.length ? steps.map((step) => `- [ ] ${step}`).join("\n") : "- [ ] No implementation steps specified.",
+    "",
+    "## Validation",
+    "",
+    validation.length ? validation.map((step) => `- [ ] ${step}`).join("\n") : "- [ ] No validation steps specified.",
+    ""
+  ].join("\n");
+}
+
+function buildReviewCriteriaMarkdown(title: string, validation: string[], risks: string[]): string {
+  return [
+    `# ${title} Review Criteria`,
+    "",
+    `Updated: ${new Date().toISOString()}`,
+    "",
+    "## Must Pass",
+    "",
+    validation.length ? validation.map((step) => `- ${step}`).join("\n") : "- Review final diff for correctness and scope.",
+    "",
+    "## Watch Closely",
+    "",
+    risks.length ? risks.map((risk) => `- ${risk}`).join("\n") : "- No explicit risks supplied.",
+    ""
+  ].join("\n");
+}
+
+async function readHandoffRunState(
+  config: CodexProConfig,
+  guard: PathGuard,
+  workspace: Workspace
+): Promise<Record<string, unknown>> {
+  const candidates = [
+    `${config.contextDir}/handoff-run-state.json`,
+    `${config.contextDir}/watch-handoff-state.json`,
+    `${config.contextDir}/loop-handoff-state.json`
+  ];
+  for (const candidate of candidates) {
+    const raw = await readOptionalWorkspaceFile(config, guard, workspace, candidate, 100_000);
+    if (!raw.trim()) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return { ...parsed, state_file: candidate };
+      }
+    } catch {
+      return { state: "state_parse_error", state_file: candidate };
+    }
+  }
+  return {};
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function changedStatusLines(status: string): string[] {
   return status
     .split("\n")
@@ -459,12 +698,13 @@ function agentCommandHint(agent: string, planPath: string, model?: string): stri
   if (agent === "opencode") return `opencode run${modelArg} "$(cat ${quotedPlanPath})"`;
   if (agent === "pi") return `pi run${modelArg} "$(cat ${quotedPlanPath})"`;
   if (agent === "codex") return `Read ${planPath} and execute it in small, reviewable steps.`;
+  if (agent === "claude-code" || agent === "claude") return `codexpro watch-handoff --agent claude-code --yes`;
   return `Run your local implementation agent manually with ${planPath} as the task input.`;
 }
 
-async function readRawTextFileBounded(config: CodexProConfig, guard: PathGuard, workspace: Workspace, filePath: string): Promise<string> {
+async function readRawTextFileBounded(config: CodexProConfig, guard: PathGuard, workspace: Workspace, filePath: string, maxBytes = config.maxReadBytes): Promise<string> {
   const resolved = guard.resolve(workspace, filePath);
-  await guard.assertTextFile(resolved.absPath, config.maxReadBytes);
+  await guard.assertTextFile(resolved.absPath, Math.min(maxBytes, config.maxReadBytes));
   return fsp.readFile(resolved.absPath, "utf8");
 }
 
@@ -629,6 +869,331 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
   const server = new McpServer({ name: "CodexPro", version: "0.28.5" }, { instructions: serverInstructions(config) });
   registeredToolNamesByServer.set(server as object, []);
   registerToolCardResource(server, config);
+
+  registerCodexTool(
+    config,
+    server,
+    "read_project_context",
+    {
+      title: "Read Project Context",
+      description:
+        "Read durable project bridge context for ChatGPT Pro planning: project-context.md, solution plan, checklist, review criteria, current handoff, agent status, and recent saved chat-memory rows.",
+      inputSchema: {
+        workspace_id: z.string().optional().describe("Workspace id from open_workspace. Omit to use default workspace."),
+        include_chat_memory: z.boolean().optional().describe("Include recent saved chat memory rows. Default: true."),
+        max_chat_rows: z.number().int().min(1).max(80).optional().describe("Maximum chat-memory rows to include. Default: 12."),
+        max_chars: z.number().int().min(4000).max(120000).optional().describe("Maximum response characters. Default: 40000.")
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+      _meta: {
+        ...toolCardMeta(),
+        "openai/toolInvocation/invoking": "Reading project context...",
+        "openai/toolInvocation/invoked": "Project context ready"
+      }
+    },
+    async (args) => {
+      const workspace = workspaces.getWorkspace(args.workspace_id);
+      const maxChars = limitInt(args.max_chars, 40_000, 4_000, 120_000);
+      const files = [
+        `${config.contextDir}/project-context.md`,
+        `${config.contextDir}/solution-plan.md`,
+        `${config.contextDir}/implementation-checklist.md`,
+        `${config.contextDir}/review-criteria.md`,
+        `${config.contextDir}/current-plan.md`,
+        `${config.contextDir}/agent-status.md`,
+        `${config.contextDir}/implementation-diff.patch`,
+        `${config.contextDir}/execution-log.jsonl`
+      ];
+      const sections: string[] = ["# Project Context Bundle", "", `Workspace: ${workspace.root}`, ""];
+      const includedFiles: string[] = [];
+      for (const file of files) {
+        const raw = await readOptionalWorkspaceFile(config, guard, workspace, file, 80_000);
+        if (!raw.trim()) continue;
+        const preview = truncateText(raw, file.endsWith(".patch") || file.endsWith(".jsonl") ? 12_000 : 20_000);
+        sections.push(`## ${file}`, "", "```text", preview.text, "```", "");
+        includedFiles.push(file);
+      }
+
+      const chatRows: Record<string, unknown>[] = [];
+      if (parseBool(args.include_chat_memory, true)) {
+        const raw = await readOptionalWorkspaceFile(config, guard, workspace, `${config.contextDir}/chat-memory.jsonl`, 250_000);
+        chatRows.push(...parseJsonl(raw).slice(-limitInt(args.max_chat_rows, 12, 1, 80)));
+        if (chatRows.length) {
+          sections.push("## Recent Chat Memory", "", "```json");
+          sections.push(JSON.stringify(chatRows, null, 2));
+          sections.push("```", "");
+          includedFiles.push(`${config.contextDir}/chat-memory.jsonl`);
+        }
+      }
+
+      const response = truncateText(sections.join("\n"), maxChars);
+      return textResult(response.text, {
+        workspace_id: workspace.id,
+        root: workspace.root,
+        files: includedFiles,
+        file_count: includedFiles.length,
+        chat_memory_rows: chatRows.length,
+        truncated: response.truncated
+      });
+    }
+  );
+
+  registerCodexTool(
+    config,
+    server,
+    "search_project_memory",
+    {
+      title: "Search Project Memory",
+      description:
+        "Search saved .ai-bridge memory, solution plans, handoffs, and status artifacts. Use this before major planning so ChatGPT Pro can reuse prior decisions.",
+      inputSchema: {
+        workspace_id: z.string().optional().describe("Workspace id from open_workspace. Omit to use default workspace."),
+        query: z.string().describe("Case-insensitive text query."),
+        max_results: z.number().int().min(1).max(80).optional().describe("Maximum matching snippets. Default: 12."),
+        max_chars_per_result: z.number().int().min(200).max(4000).optional().describe("Maximum characters per result. Default: 1200.")
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+      _meta: {
+        ...toolCardMeta(),
+        "openai/toolInvocation/invoking": "Searching project memory...",
+        "openai/toolInvocation/invoked": "Project memory searched"
+      }
+    },
+    async (args) => {
+      const workspace = workspaces.getWorkspace(args.workspace_id);
+      const query = String(args.query ?? "").trim().toLowerCase();
+      if (!query) throw new CodexProError("query must not be empty.");
+      const maxResults = limitInt(args.max_results, 12, 1, 80);
+      const maxChars = limitInt(args.max_chars_per_result, 1200, 200, 4000);
+      const memoryFiles = [
+        `${config.contextDir}/project-context.md`,
+        `${config.contextDir}/chat-memory.jsonl`,
+        `${config.contextDir}/solution-plan.md`,
+        `${config.contextDir}/implementation-checklist.md`,
+        `${config.contextDir}/review-criteria.md`,
+        `${config.contextDir}/current-plan.md`,
+        `${config.contextDir}/agent-status.md`,
+        `${config.contextDir}/decisions.md`,
+        `${config.contextDir}/open-questions.md`,
+        `${config.contextDir}/execution-log.jsonl`
+      ];
+      const results: Array<{ path: string; line: number; snippet: string }> = [];
+      for (const file of memoryFiles) {
+        const raw = await readOptionalWorkspaceFile(config, guard, workspace, file, 300_000);
+        if (!raw) continue;
+        const lines = raw.split(/\r?\n/);
+        for (let index = 0; index < lines.length; index += 1) {
+          if (!lines[index].toLowerCase().includes(query)) continue;
+          const start = Math.max(0, index - 2);
+          const end = Math.min(lines.length, index + 3);
+          const snippet = truncateText(lines.slice(start, end).join("\n"), maxChars).text;
+          results.push({ path: file, line: index + 1, snippet });
+          if (results.length >= maxResults) break;
+        }
+        if (results.length >= maxResults) break;
+      }
+      const text = results.length
+        ? [
+            "# Search Project Memory",
+            "",
+            `Query: ${args.query}`,
+            "",
+            ...results.map((result) => `## ${result.path}:${result.line}\n\n\`\`\`text\n${result.snippet}\n\`\`\``)
+          ].join("\n")
+        : `# Search Project Memory\n\nQuery: ${args.query}\n\nNo saved memory matches.`;
+      return textResult(text, {
+        workspace_id: workspace.id,
+        root: workspace.root,
+        query: args.query,
+        results,
+        result_count: results.length
+      });
+    }
+  );
+
+  registerCodexTool(
+    config,
+    server,
+    "save_chat_summary",
+    {
+      title: "Save Chat Summary",
+      description:
+        "Persist the current ChatGPT Pro conversation summary, decisions, todos, and useful handles into .ai-bridge so future CodexPro/Claude/Codex runs can retrieve them. The model must provide the summary explicitly.",
+      inputSchema: {
+        workspace_id: z.string().optional().describe("Workspace id from open_workspace. Omit to use default workspace."),
+        title: z.string().optional().describe("Short memory title."),
+        summary: z.string().describe("Concise but complete summary of the current conversation or decision."),
+        decisions: z.array(z.string()).optional().describe("Stable decisions to preserve."),
+        todos: z.array(z.string()).optional().describe("Open follow-up items."),
+        links: z.array(z.string()).optional().describe("Useful file paths, thread ids, URLs, commands, or handles."),
+        tags: z.array(z.string()).optional().describe("Search tags."),
+        update_project_context: z.boolean().optional().describe("Also rewrite .ai-bridge/project-context.md from this summary. Default: true.")
+      },
+      annotations: HANDOFF_WRITE_ANNOTATIONS,
+      _meta: {
+        ...toolCardMeta(),
+        "openai/toolInvocation/invoking": "Saving chat summary...",
+        "openai/toolInvocation/invoked": "Chat summary saved"
+      }
+    },
+    async (args) => {
+      const workspace = workspaces.getWorkspace(args.workspace_id);
+      await ensureAiBridge(config, guard, workspace);
+      const summary = String(args.summary ?? "").trim();
+      if (!summary) throw new CodexProError("summary must not be empty.");
+      const decisions = normalizeList(args.decisions);
+      const todos = normalizeList(args.todos);
+      const links = normalizeList(args.links);
+      const tags = normalizeList(args.tags, 40);
+      const event = {
+        ts: new Date().toISOString(),
+        title: cleanOneLine(args.title, "ChatGPT Pro summary"),
+        summary,
+        decisions,
+        todos,
+        links,
+        tags
+      };
+      const memoryPath = `${config.contextDir}/chat-memory.jsonl`;
+      await appendWorkspaceJsonl(config, guard, workspace, memoryPath, event);
+      const written = [memoryPath];
+      if (parseBool(args.update_project_context, true)) {
+        const projectContext = formatProjectContext(summary, decisions, todos, links);
+        await writeTextFile(config, guard, workspace, `${config.contextDir}/project-context.md`, projectContext, {
+          createDirs: true,
+          overwrite: true
+        });
+        written.push(`${config.contextDir}/project-context.md`);
+      }
+      const text = [
+        "# Save Chat Summary",
+        "",
+        `Saved: ${event.title}`,
+        `Memory: ${memoryPath}`,
+        parseBool(args.update_project_context, true) ? `Project context: ${config.contextDir}/project-context.md` : "Project context not rewritten.",
+        "",
+        "## Summary",
+        "",
+        summary
+      ].join("\n");
+      return textResult(text, {
+        workspace_id: workspace.id,
+        root: workspace.root,
+        written,
+        event
+      });
+    }
+  );
+
+  registerCodexTool(
+    config,
+    server,
+    "write_detailed_solution",
+    {
+      title: "Write Detailed Solution",
+      description:
+        "Write a durable, implementation-ready ChatGPT Pro solution plan plus checklist and review criteria into .ai-bridge. Use before direct implementation or Claude Code handoff.",
+      inputSchema: {
+        workspace_id: z.string().optional().describe("Workspace id from open_workspace. Omit to use default workspace."),
+        title: z.string().optional().describe("Plan title. Default: Detailed solution plan."),
+        objective: z.string().describe("What should be accomplished."),
+        non_goals: z.array(z.string()).optional().describe("Explicit non-goals or scope exclusions."),
+        system_understanding: z.string().optional().describe("Current understanding of the repo/system."),
+        evidence: z.array(z.string()).optional().describe("Files, commands, observations, and facts supporting the plan."),
+        recommended_approach: z.string().describe("The selected approach."),
+        alternatives: z.array(z.string()).optional().describe("Alternatives considered and why they were not selected."),
+        implementation_steps: z.array(z.string()).describe("Concrete ordered implementation steps."),
+        files_to_change: z.array(z.string()).optional().describe("Expected files to inspect or edit."),
+        validation: z.array(z.string()).optional().describe("Commands/checks/manual verification to run."),
+        risks: z.array(z.string()).optional().describe("Risks, edge cases, and things to inspect during review."),
+        rollback: z.array(z.string()).optional().describe("Rollback or recovery steps."),
+        handoff_prompt: z.string().optional().describe("Executor-facing prompt for Claude Code/Codex/local agents."),
+        also_write_current_plan: z.boolean().optional().describe("Also write .ai-bridge/current-plan.md. Default: false.")
+      },
+      annotations: HANDOFF_WRITE_ANNOTATIONS,
+      _meta: {
+        ...toolCardMeta(),
+        "openai/toolInvocation/invoking": "Writing detailed solution...",
+        "openai/toolInvocation/invoked": "Detailed solution written"
+      }
+    },
+    async (args) => {
+      const workspace = workspaces.getWorkspace(args.workspace_id);
+      await ensureAiBridge(config, guard, workspace);
+      const title = cleanOneLine(args.title, "Detailed solution plan", 120);
+      const implementationSteps = normalizeList(args.implementation_steps, 200);
+      if (!implementationSteps.length) throw new CodexProError("implementation_steps must contain at least one concrete step.");
+      const validation = normalizeList(args.validation, 120);
+      const risks = normalizeList(args.risks, 120);
+      const plan = buildDetailedSolutionMarkdown({
+        title,
+        objective: String(args.objective ?? ""),
+        nonGoals: normalizeList(args.non_goals),
+        systemUnderstanding: String(args.system_understanding ?? ""),
+        evidence: normalizeList(args.evidence, 160),
+        recommendedApproach: String(args.recommended_approach ?? ""),
+        alternatives: normalizeList(args.alternatives, 120),
+        implementationSteps,
+        filesToChange: normalizeList(args.files_to_change, 200),
+        validation,
+        risks,
+        rollback: normalizeList(args.rollback, 80),
+        handoffPrompt: String(args.handoff_prompt ?? "")
+      });
+      const checklist = buildChecklistMarkdown(title, implementationSteps, validation);
+      const reviewCriteria = buildReviewCriteriaMarkdown(title, validation, risks);
+      const solution = await writeTextFile(config, guard, workspace, `${config.contextDir}/solution-plan.md`, plan, {
+        createDirs: true,
+        overwrite: true
+      });
+      const checklistResult = await writeTextFile(config, guard, workspace, `${config.contextDir}/implementation-checklist.md`, checklist, {
+        createDirs: true,
+        overwrite: true
+      });
+      const reviewResult = await writeTextFile(config, guard, workspace, `${config.contextDir}/review-criteria.md`, reviewCriteria, {
+        createDirs: true,
+        overwrite: true
+      });
+      const written = [
+        solution.path,
+        checklistResult.path,
+        reviewResult.path
+      ];
+      if (parseBool(args.also_write_current_plan, false)) {
+        const current = await writeTextFile(config, guard, workspace, `${config.contextDir}/current-plan.md`, plan, {
+          createDirs: true,
+          overwrite: true
+        });
+        written.push(current.path);
+      }
+      await appendWorkspaceJsonl(config, guard, workspace, `${config.contextDir}/execution-log.jsonl`, {
+        ts: new Date().toISOString(),
+        event: "write_detailed_solution",
+        title,
+        files: written
+      });
+      const text = [
+        "# Write Detailed Solution",
+        "",
+        `Wrote ${written.join(", ")}.`,
+        `Implementation steps: ${implementationSteps.length}`,
+        `Validation checks: ${validation.length}`,
+        `Risks: ${risks.length}`,
+        "",
+        "Use handoff_to_claude_code when this solution should be executed by Claude Code, or use write/edit/bash directly when the selected ChatGPT model can use MCP tools."
+      ].join("\n");
+      return textResult(text, {
+        workspace_id: workspace.id,
+        root: workspace.root,
+        written,
+        title,
+        implementation_step_count: implementationSteps.length,
+        validation_count: validation.length,
+        risk_count: risks.length,
+        solution_sha256: solution.sha256
+      });
+    }
+  );
 
   registerCodexTool(
     config,
@@ -1815,6 +2380,205 @@ ${result.prompt}
         additions: result.writeResult.diff.additions,
         deletions: result.writeResult.diff.deletions,
         diff: result.writeResult.diff.diff
+      });
+    }
+  );
+
+  registerCodexTool(
+    config,
+    server,
+    "handoff_to_claude_code",
+    {
+      title: "Handoff To Claude Code",
+      description:
+        "Write .ai-bridge/current-plan.md specifically for Claude Code CLI/headless execution. This only creates handoff files; a user-started local watcher or command runs Claude Code.",
+      inputSchema: {
+        workspace_id: z.string().optional().describe("Workspace id from open_workspace. Omit to use default workspace."),
+        model: z.string().optional().describe("Optional Claude model identifier or profile note to include in the handoff."),
+        title: z.string().optional().describe("Short task title."),
+        plan: z.string().describe("Detailed implementation plan for Claude Code. Include files, exact steps, tests, and review criteria."),
+        append: z.boolean().optional().describe("Append to existing current-plan.md instead of overwriting. Default: false.")
+      },
+      annotations: HANDOFF_WRITE_ANNOTATIONS,
+      _meta: {
+        ...toolCardMeta(),
+        "openai/toolInvocation/invoking": "Writing Claude Code handoff plan...",
+        "openai/toolInvocation/invoked": "Claude Code handoff plan written"
+      }
+    },
+    async (args) => {
+      const workspace = workspaces.getWorkspace(args.workspace_id);
+      const result = await writeAgentHandoff(config, guard, workspace, {
+        agent: "claude-code",
+        agentName: "Claude Code",
+        model: args.model,
+        title: cleanOneLine(args.title, "Claude Code implementation plan"),
+        plan: String(args.plan ?? ""),
+        append: parseBool(args.append, false),
+        eventName: "handoff_to_claude_code"
+      });
+      const planRaw = await readRawTextFileBounded(config, guard, workspace, result.planPath, 300_000);
+      const planHashValue = sha256Hex(planRaw);
+      const watcherCommand = [
+        "codexpro watch-handoff",
+        "--agent claude-code",
+        "--yes"
+      ].join(" ");
+      const text = `# Handoff To Claude Code
+
+Agent: Claude Code
+${result.model ? `Model note: ${result.model}\n` : ""}Wrote ${result.planPath}.
+Plan hash: ${planHashValue}
+Status path: ${result.statusPath}
+Diff path: ${result.diffPath}
+Execution log: ${result.executionLogPath}
+Diff stats: +${result.writeResult.diff.additions} -${result.writeResult.diff.deletions}
+
+Start the local watcher from the workspace:
+
+\`\`\`bash
+${watcherCommand}
+\`\`\`
+
+After the watcher starts and runs the plan, call handoff_poll with plan_hash="${planHashValue}" to review status, logs, and diff.${diffBlock(result.writeResult.diff.diff)}`;
+      return textResult(text, {
+        workspace_id: workspace.id,
+        root: workspace.root,
+        agent: result.agent,
+        agent_name: result.agentName,
+        model: result.model,
+        plan_path: result.planPath,
+        plan_hash: planHashValue,
+        status_path: result.statusPath,
+        diff_path: result.diffPath,
+        log_path: result.logPath,
+        execution_log_path: result.executionLogPath,
+        watcher_command: watcherCommand,
+        additions: result.writeResult.diff.additions,
+        deletions: result.writeResult.diff.deletions,
+        diff: result.writeResult.diff.diff
+      });
+    }
+  );
+
+  registerCodexTool(
+    config,
+    server,
+    "handoff_poll",
+    {
+      title: "Handoff Poll",
+      description:
+        "Read-only long-poll for local handoff execution state and artifacts. Use after handoff_to_claude_code/handoff_to_agent while a local watcher or execute-handoff process runs.",
+      inputSchema: {
+        workspace_id: z.string().optional().describe("Workspace id from open_workspace. Omit to use default workspace."),
+        plan_hash: z.string().optional().describe("Expected SHA-256 hash of .ai-bridge/current-plan.md. Returned by handoff_to_claude_code."),
+        max_wait_seconds: z.number().int().min(0).max(120).optional().describe("Maximum seconds to poll before returning running/timed_out. Default: 0."),
+        poll_ms: z.number().int().min(250).max(10000).optional().describe("Poll interval. Default: 1000 ms."),
+        include_diff: z.boolean().optional().describe("Include implementation-diff.patch excerpt. Default: true."),
+        include_log_excerpt: z.boolean().optional().describe("Include execution-log.jsonl excerpt. Default: true."),
+        include_status: z.boolean().optional().describe("Include agent-status.md excerpt. Default: true."),
+        max_artifact_chars: z.number().int().min(1000).max(80000).optional().describe("Maximum characters per artifact excerpt. Default: 16000.")
+      },
+      annotations: READ_ONLY_ANNOTATIONS,
+      _meta: {
+        ...toolCardMeta(),
+        "openai/toolInvocation/invoking": "Polling handoff execution...",
+        "openai/toolInvocation/invoked": "Handoff execution polled"
+      }
+    },
+    async (args) => {
+      const workspace = workspaces.getWorkspace(args.workspace_id);
+      const maxWaitMs = limitInt(args.max_wait_seconds, 0, 0, 120) * 1000;
+      const pollMs = limitInt(args.poll_ms, 1000, 250, 10000);
+      const maxArtifactChars = limitInt(args.max_artifact_chars, 16_000, 1_000, 80_000);
+      const started = Date.now();
+      const planPath = `${config.contextDir}/current-plan.md`;
+      const statusPath = `${config.contextDir}/agent-status.md`;
+      const diffPath = `${config.contextDir}/implementation-diff.patch`;
+      const logPath = `${config.contextDir}/execution-log.jsonl`;
+
+      let state: Record<string, unknown> = {};
+      let currentHash = "";
+      let finalState = "waiting_for_executor";
+      do {
+        const planRaw = await readOptionalWorkspaceFile(config, guard, workspace, planPath, 300_000);
+        currentHash = planRaw ? sha256Hex(planRaw) : "";
+        state = await readHandoffRunState(config, guard, workspace);
+        const expected = typeof args.plan_hash === "string" && args.plan_hash.trim() ? args.plan_hash.trim() : "";
+        if (!planRaw) {
+          finalState = "no_plan";
+          break;
+        }
+        if (expected && expected !== currentHash) {
+          finalState = "plan_hash_mismatch";
+          break;
+        }
+        if (state.state === "running") {
+          finalState = "running";
+        } else if (
+          state.state === "completed" ||
+          state.state === "failed" ||
+          state.event === "watch_handoff_finished" ||
+          state.lastPlanHash === currentHash ||
+          state.plan_hash === currentHash
+        ) {
+          finalState = "completed";
+          break;
+        } else {
+          finalState = "waiting_for_executor";
+        }
+        if (Date.now() - started >= maxWaitMs) break;
+        await sleep(pollMs);
+      } while (maxWaitMs > 0);
+
+      const includeStatus = parseBool(args.include_status, true);
+      const includeDiff = parseBool(args.include_diff, true);
+      const includeLog = parseBool(args.include_log_excerpt, true);
+      const statusRaw = includeStatus ? await readOptionalWorkspaceFile(config, guard, workspace, statusPath, 200_000) : "";
+      const diffRaw = includeDiff ? await readOptionalWorkspaceFile(config, guard, workspace, diffPath, 500_000) : "";
+      const logRaw = includeLog ? await readOptionalWorkspaceFile(config, guard, workspace, logPath, 300_000) : "";
+      const status = truncateText(statusRaw, maxArtifactChars);
+      const diff = truncateText(diffRaw, maxArtifactChars);
+      const log = truncateText(logRaw.split(/\r?\n/).slice(-40).join("\n"), maxArtifactChars);
+      const diffStatsValue = diffStats(diffRaw || "");
+      const elapsed = Date.now() - started;
+      const text = [
+        "# Handoff Poll",
+        "",
+        `State: ${finalState}`,
+        `Workspace: ${workspace.root}`,
+        `Plan: ${planPath}`,
+        `Plan hash: ${currentHash || "none"}`,
+        `Elapsed: ${elapsed} ms`,
+        `State file: ${state.state_file ?? "none"}`,
+        `Exit code: ${state.exit_code ?? state.exitCode ?? "unknown"}`,
+        `Diff stats: +${diffStatsValue.additions} -${diffStatsValue.deletions}`,
+        "",
+        includeStatus ? `## Agent Status\n\n\`\`\`text\n${status.text || "(empty)"}\n\`\`\`` : "",
+        includeDiff ? `## Implementation Diff\n\n\`\`\`diff\n${diff.text || "(empty)"}\n\`\`\`` : "",
+        includeLog ? `## Execution Log Tail\n\n\`\`\`jsonl\n${log.text || "(empty)"}\n\`\`\`` : ""
+      ].filter(Boolean).join("\n");
+      return textResult(text, {
+        workspace_id: workspace.id,
+        root: workspace.root,
+        state: finalState,
+        state_file: state.state_file ?? null,
+        raw_state: state,
+        plan_path: planPath,
+        plan_hash: currentHash || null,
+        expected_plan_hash: typeof args.plan_hash === "string" ? args.plan_hash : null,
+        elapsed_ms: elapsed,
+        status_path: statusPath,
+        diff_path: diffPath,
+        log_path: logPath,
+        exit_code: state.exit_code ?? state.exitCode ?? null,
+        additions: diffStatsValue.additions,
+        deletions: diffStatsValue.deletions,
+        diff_changed: diffStatsValue.changed,
+        status_excerpt: status.text,
+        diff_excerpt: diff.text,
+        log_excerpt: log.text,
+        truncated: status.truncated || diff.truncated || log.truncated
       });
     }
   );

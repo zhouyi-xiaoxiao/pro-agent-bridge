@@ -145,7 +145,7 @@ await client.request('initialize', {
 client.notify('notifications/initialized');
 const tools = await client.request('tools/list', {});
 const toolNames = tools.tools.map((tool) => tool.name);
-for (const expected of ['server_config', 'codexpro_self_test', 'codexpro_inventory', 'list_workspaces', 'open_current_workspace', 'open_workspace', 'workspace_snapshot', 'tree', 'search', 'load_skill', 'read', 'write', 'edit', 'bash', 'git_status', 'git_diff', 'show_changes', 'read_handoff', 'codex_context', 'handoff_to_agent', 'handoff_to_codex', 'export_pro_context']) {
+for (const expected of ['server_config', 'codexpro_self_test', 'codexpro_inventory', 'list_workspaces', 'open_current_workspace', 'open_workspace', 'workspace_snapshot', 'tree', 'search', 'load_skill', 'read_project_context', 'search_project_memory', 'save_chat_summary', 'write_detailed_solution', 'read', 'write', 'edit', 'bash', 'git_status', 'git_diff', 'show_changes', 'read_handoff', 'codex_context', 'handoff_to_agent', 'handoff_to_claude_code', 'handoff_poll', 'handoff_to_codex', 'export_pro_context']) {
   if (!toolNames.includes(expected)) throw new Error(`missing tool: ${expected}`);
 }
 const toolCardUri = 'ui://widget/codexpro-tool-card-v9.html';
@@ -364,6 +364,47 @@ if (!exactProContext.includes('Auto-include important root files: no') || !exact
 if (exactProContext.includes('### AGENTS.md') || exactProContext.includes('### package.json') || exactProContext.includes('### env-ref.js')) {
   throw new Error('selected-only export leaked auto-included important or changed files');
 }
+const savedSummary = await client.request('tools/call', {
+  name: 'save_chat_summary',
+  arguments: {
+    workspace_id: ws,
+    summary: 'Smoke bridge conversation summary for ChatGPT Pro durable memory.',
+    decisions: ['Use Claude Code for local execution while ChatGPT Pro writes and reviews plans.'],
+    todos: ['Run handoff_poll after local execution finishes.'],
+    tags: ['smoke', 'bridge'],
+    promote_to_project_context: true
+  }
+});
+if (!savedSummary.structuredContent.written?.includes?.('.ai-bridge/chat-memory.jsonl')) {
+  throw new Error(`save_chat_summary wrote unexpected path: ${JSON.stringify(savedSummary.structuredContent)}`);
+}
+const detailedSolution = await client.request('tools/call', {
+  name: 'write_detailed_solution',
+  arguments: {
+    workspace_id: ws,
+    title: 'Smoke Detailed Bridge Plan',
+    objective: 'ChatGPT Pro needs to plan, Claude Code needs to execute, and ChatGPT Pro needs pollable artifacts.',
+    system_understanding: 'The bridge persists project context in .ai-bridge and delegates implementation through local handoff commands.',
+    recommended_approach: 'Persist a detailed solution, create a Claude Code handoff, and use handoff_poll for ChatGPT Pro review.',
+    implementation_steps: ['Write solution artifacts', 'Create Claude Code handoff', 'Poll artifacts'],
+    validation: ['Run MCP smoke tests', 'Check handoff status state'],
+    risks: ['Watcher not started yet'],
+    rollback: ['Remove generated .ai-bridge artifacts'],
+    also_write_current_plan: true
+  }
+});
+if (!detailedSolution.structuredContent?.written?.includes?.('.ai-bridge/solution-plan.md')) {
+  throw new Error(`write_detailed_solution did not report solution-plan.md: ${JSON.stringify(detailedSolution.structuredContent)}`);
+}
+const projectContext = await client.request('tools/call', { name: 'read_project_context', arguments: { workspace_id: ws, max_chat_rows: 5 } });
+const projectContextText = projectContext.content?.[0]?.text ?? '';
+if (!projectContextText.includes('Smoke Detailed Bridge Plan') || !projectContextText.includes('Smoke bridge conversation summary')) {
+  throw new Error(`read_project_context missed saved bridge artifacts:\n${projectContextText}`);
+}
+const searchedMemory = await client.request('tools/call', { name: 'search_project_memory', arguments: { workspace_id: ws, query: 'Claude Code handoff', max_results: 5 } });
+if (!searchedMemory.structuredContent.result_count) {
+  throw new Error(`search_project_memory did not find saved bridge context: ${JSON.stringify(searchedMemory.structuredContent)}`);
+}
 const agentHandoff = await client.request('tools/call', {
   name: 'handoff_to_agent',
   arguments: {
@@ -391,6 +432,31 @@ if (!escapedPrompt.includes("--model 'foo; touch /tmp/pwned'")) {
 }
 if (escapedPrompt.includes('--model foo; touch')) {
   throw new Error(`handoff_to_agent exposed an unquoted model hint: ${escapedPrompt}`);
+}
+const claudeHandoff = await client.request('tools/call', {
+  name: 'handoff_to_claude_code',
+  arguments: {
+    workspace_id: ws,
+    model: 'claude-code-default',
+    title: 'Smoke Claude Code handoff',
+    plan: '- Update demo.txt only after a local watcher starts.\n- Record status and diff artifacts.'
+  }
+});
+if (claudeHandoff.structuredContent.agent !== 'claude-code' || !claudeHandoff.structuredContent.watcher_command?.includes('--agent claude-code')) {
+  throw new Error(`handoff_to_claude_code did not return Claude watcher metadata: ${JSON.stringify(claudeHandoff.structuredContent)}`);
+}
+const handoffPoll = await client.request('tools/call', {
+  name: 'handoff_poll',
+  arguments: {
+    workspace_id: ws,
+    plan_hash: claudeHandoff.structuredContent.plan_hash,
+    max_wait_seconds: 0,
+    include_diff: false,
+    include_log_excerpt: false
+  }
+});
+if (handoffPoll.structuredContent.state !== 'waiting_for_executor' || handoffPoll.structuredContent.plan_hash !== claudeHandoff.structuredContent.plan_hash) {
+  throw new Error(`handoff_poll did not expose waiting state for current Claude plan: ${JSON.stringify(handoffPoll.structuredContent)}`);
 }
 for (const bridgeFile of ['agent-status.md', 'implementation-diff.patch', 'execution-log.jsonl']) {
   await fs.stat(path.join(tmp, '.ai-bridge', bridgeFile));

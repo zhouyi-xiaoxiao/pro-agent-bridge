@@ -41,6 +41,8 @@
     "CHANGELOG.md",
     "CHATGPT_PROMPT.md",
     "CODEX_PROMPT.md",
+    "EXTENDED_PRO_CLAUDE_BRIDGE.md",
+    "CHATGPT_PRO_REVIEW_PACKET.md",
     "AGENTS.example.md",
     "config.example.env"
   ],
@@ -49,6 +51,7 @@
   },
   "bin": {
     "codexpro": "scripts/codexpro.mjs",
+    "codexpro-claude-handoff": "scripts/claude-handoff.mjs",
     "codexpro-mcp": "dist/stdio.js",
     "codexpro-mcp-http": "dist/http.js"
   },

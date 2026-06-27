@@ -106,6 +106,7 @@ Options:
 Execute handoff options:
   codexpro execute-handoff --agent opencode --model provider/model
   codexpro execute-handoff --agent pi --model provider/model
+  codexpro execute-handoff --agent claude-code
   codexpro execute-handoff --agent custom --command "my-agent --task-file {{plan_file}}"
   --agent <opencode|pi|codex|custom>
                              Local implementation agent adapter.
@@ -120,6 +121,7 @@ Execute handoff options:
 Watch handoff options:
   codexpro watch-handoff --agent opencode --model provider/model
   codexpro watch-handoff --agent pi --model provider/model
+  codexpro watch-handoff --agent claude-code
   codexpro watch-handoff --agent custom --command "my-agent --task-file {{plan_file}}"
   --once                    Exit after checking/running one new plan.
   --poll-interval-ms <ms>   Poll interval. Default: 2000.
@@ -1175,10 +1177,20 @@ function buildExecutorCommand(args, root, planPath, planText) {
       custom: false
     };
   }
+  if (agent === 'claude-code' || agent === 'claude') {
+    return {
+      agent: 'claude-code',
+      model,
+      command: 'codexpro-claude-handoff',
+      args: ['--plan-file', planPath],
+      displayArgs: ['--plan-file', path.relative(root, planPath)],
+      custom: false
+    };
+  }
   if (agent === 'custom') {
     throw new Error('Custom agent execution requires --command.');
   }
-  throw new Error(`Unsupported --agent ${agent}. Use opencode, pi, codex, or custom with --command.`);
+  throw new Error(`Unsupported --agent ${agent}. Use opencode, pi, codex, claude-code, or custom with --command.`);
 }
 
 function executorCommandPreview(commandInfo) {
@@ -1381,6 +1393,20 @@ async function executeHandoffRequest(request, args, options = {}) {
     throw new Error(`${request.commandInfo.command} was not found. Install it, add it to PATH, pass an absolute path, or use --command.`);
   }
 
+  const currentPlanHash = planHash(request.planText);
+  const startedAt = new Date().toISOString();
+  writeHandoffRunState(request.root, request.contextDir, {
+    state: 'running',
+    iteration: options.iteration ?? null,
+    started_at: startedAt,
+    finished_at: null,
+    plan_hash: currentPlanHash,
+    agent: request.commandInfo.agent,
+    model: request.commandInfo.model || undefined,
+    command: executorCommandPreview(request.commandInfo),
+    plan_path: path.posix.join(request.contextDir, 'current-plan.md')
+  });
+
   statusLine('wait', `Running ${request.commandInfo.agent}: ${request.commandText}`);
   const result = await runProcessCaptured(request.commandInfo.command, request.commandInfo.args, {
     cwd: request.root,
@@ -1389,6 +1415,24 @@ async function executeHandoffRequest(request, args, options = {}) {
   });
   const diffText = readGitDiff(request.root, request.maxOutputBytes);
   const outputs = writeExecutionOutputs(request.root, request.contextDir, request.commandInfo, result, diffText);
+  writeHandoffRunState(request.root, request.contextDir, {
+    state: result.exitCode === 0 && !result.timedOut ? 'completed' : 'failed',
+    iteration: options.iteration ?? null,
+    started_at: startedAt,
+    finished_at: new Date().toISOString(),
+    plan_hash: currentPlanHash,
+    agent: request.commandInfo.agent,
+    model: request.commandInfo.model || undefined,
+    command: executorCommandPreview(request.commandInfo),
+    exit_code: result.exitCode,
+    signal: result.signal,
+    timed_out: result.timedOut,
+    duration_ms: result.durationMs,
+    plan_path: path.posix.join(request.contextDir, 'current-plan.md'),
+    status_path: path.posix.join(request.contextDir, 'agent-status.md'),
+    diff_path: path.posix.join(request.contextDir, 'implementation-diff.patch'),
+    log_path: path.posix.join(request.contextDir, 'execution-log.jsonl')
+  });
   statusLine(result.exitCode === 0 ? 'ok' : 'warn', `Agent exited with code ${result.exitCode ?? 'null'}${result.signal ? ` signal=${result.signal}` : ''}`);
   console.log(`Status: ${path.relative(request.root, outputs.statusPath)}`);
   console.log(`Diff:   ${path.relative(request.root, outputs.diffPath)}`);
@@ -1433,6 +1477,14 @@ function readWatchState(statePath) {
 function writeWatchState(statePath, state) {
   fs.mkdirSync(path.dirname(statePath), { recursive: true, mode: 0o700 });
   fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+}
+
+function writeHandoffRunState(root, contextDir, state) {
+  const bridgeDir = resolveWorkspaceFile(root, contextDir);
+  fs.mkdirSync(bridgeDir, { recursive: true, mode: 0o700 });
+  const statePath = path.join(bridgeDir, 'handoff-run-state.json');
+  fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
+  return statePath;
 }
 
 function appendBridgeLog(root, contextDir, event) {

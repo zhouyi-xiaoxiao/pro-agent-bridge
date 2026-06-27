@@ -319,13 +319,19 @@ export async function editTextFile(
 
 export async function ensureAiBridge(config: CodexProConfig, guard: PathGuard, workspace: Workspace): Promise<string[]> {
   const files: Record<string, string> = {
-    "README.md": `# AI Bridge\n\nShared planning context for ChatGPT, other planning models, Codex, OpenCode, Pi, or another local implementation agent.\n\n- current-plan.md: plan produced by ChatGPT or another planning model for the implementation agent.\n- agent-status.md: generic implementation notes, touched files, test results, blockers, and review notes.\n- implementation-diff.patch: final review diff from the implementation agent when practical.\n- codex-status.md: legacy Codex-specific status file, kept for existing workflows.\n- decisions.md: architectural decisions that should remain stable.\n- open-questions.md: unresolved questions.\n- execution-log.jsonl: append-only generic agent handoff and execution events.\n- session-log.jsonl: append-only legacy session events.\n`,
+    "README.md": `# AI Bridge\n\nShared planning context for ChatGPT, other planning models, Codex, Claude Code, OpenCode, Pi, or another local implementation agent.\n\n- current-plan.md: plan produced by ChatGPT or another planning model for the implementation agent.\n- solution-plan.md: detailed ChatGPT Pro solution plan with context, alternatives, implementation steps, validation, risks, and rollback.\n- implementation-checklist.md: reviewable implementation and validation checklist derived from the solution plan.\n- review-criteria.md: pass/fail criteria for ChatGPT Pro, Codex, Claude Code, or another reviewer.\n- project-context.md: durable project memory summary promoted from the current chat or imported context.\n- chat-memory.jsonl: append-only saved ChatGPT conversation summaries and decisions.\n- agent-status.md: generic implementation notes, touched files, test results, blockers, and review notes.\n- implementation-diff.patch: final review diff from the implementation agent when practical.\n- codex-status.md: legacy Codex-specific status file, kept for existing workflows.\n- decisions.md: architectural decisions that should remain stable.\n- open-questions.md: unresolved questions.\n- handoff-run-state.json: machine-readable local handoff execution state for ChatGPT Pro polling.\n- execution-log.jsonl: append-only generic agent handoff and execution events.\n- session-log.jsonl: append-only legacy session events.\n`,
     "current-plan.md": "# Current Plan\n\nNo plan written yet.\n",
+    "solution-plan.md": "# Solution Plan\n\nNo detailed solution written yet.\n",
+    "implementation-checklist.md": "# Implementation Checklist\n\n- [ ] No implementation checklist written yet.\n",
+    "review-criteria.md": "# Review Criteria\n\nNo review criteria written yet.\n",
+    "project-context.md": "# Project Context\n\nNo project context saved yet.\n",
+    "chat-memory.jsonl": "",
     "agent-status.md": "# Agent Status\n\nNo implementation agent status written yet.\n",
     "implementation-diff.patch": "",
     "codex-status.md": "# Codex Status\n\nNo Codex status written yet.\n",
     "decisions.md": "# Decisions\n\n",
     "open-questions.md": "# Open Questions\n\n",
+    "handoff-run-state.json": "{}\n",
     "execution-log.jsonl": "",
     "session-log.jsonl": ""
   };

@@ -127,7 +127,8 @@ The website and ChatGPT cards are designed to keep repo inventory, git details, 
 | Review | `show_changes`, `git_status`, `git_diff`, compact visual cards |
 | Safety | workspace-only writes, safe bash by default, blocked secret/build/cache paths, token-protected public URLs |
 | Context | `codex_context`, `read_handoff`, selected-only `export_pro_context` |
-| Local execution | `execute-handoff` and `watch-handoff` run from your terminal, not as remote MCP tools |
+| Pro planning | `read_project_context`, `search_project_memory`, `save_chat_summary`, `write_detailed_solution` |
+| Local execution | `handoff_to_claude_code`, `handoff_poll`, `execute-handoff`, and `watch-handoff` keep execution in your terminal, not as remote MCP commands |
 
 CodexPro is not an OS sandbox. It is a local developer bridge with safety defaults. Read [SECURITY.md](SECURITY.md) before exposing it through a tunnel.
 
@@ -186,6 +187,12 @@ Standard mode exposes:
 - `bash` — run allowlisted shell commands in the workspace. Hidden when `CODEXPRO_BASH_MODE=off`.
 - `show_changes` — one review-oriented summary with git status, diff stats, and optional diff.
 - `read_handoff` — read `.ai-bridge` files.
+- `read_project_context` — read durable project memory, detailed plans, checklists, current handoff, agent status, diff, execution log, and recent saved chat summaries.
+- `search_project_memory` — search saved `.ai-bridge` memory and planning artifacts before writing a new plan.
+- `save_chat_summary` — persist an explicit ChatGPT-provided conversation summary, decisions, todos, links, and tags.
+- `write_detailed_solution` — write an implementation-ready solution plan, checklist, and review criteria into `.ai-bridge`.
+- `handoff_to_claude_code` — write a Claude Code handoff plan and return the watcher command plus plan hash.
+- `handoff_poll` — poll local handoff state, status, diff, and execution log for review.
 - `export_pro_context` — write `.ai-bridge/pro-context.md` for models that cannot call MCP tools directly.
 - `handoff_to_agent` — write `.ai-bridge/current-plan.md` for Codex, OpenCode, Pi, or a custom local implementation agent without executing local commands.
 
@@ -215,6 +222,7 @@ Local-only companion command:
 - `codexpro execute-handoff` — run a previously written `.ai-bridge/current-plan.md` through a local agent, then collect status, logs, and git diff. This is intentionally a CLI command, not a remote MCP tool.
 - `codexpro watch-handoff` — watch `.ai-bridge/current-plan.md` locally and run a new plan through a configured agent when its content hash changes. This is also CLI-only and is not exposed as a remote MCP tool.
 - `codexpro loop-handoff` — run a bounded local execute/review loop where a user-provided reviewer command can pass or rewrite `.ai-bridge/current-plan.md` for another local executor iteration.
+- `codexpro-claude-handoff` — helper used by `--agent claude-code` to invoke the local Claude Code CLI with a handoff prompt.
 
 The watcher is the safer way to automate handoff execution from ChatGPT Web. ChatGPT writes the plan through `handoff_to_agent`; the user-started local watcher notices the new plan and runs Pi, OpenCode, Codex, or a restricted custom command from the terminal:
 

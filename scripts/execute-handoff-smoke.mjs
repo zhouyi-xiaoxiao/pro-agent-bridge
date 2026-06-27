@@ -88,6 +88,7 @@ requireSuccess(executed, 'execute-handoff custom');
 const status = await fs.readFile(path.join(root, '.ai-bridge', 'agent-status.md'), 'utf8');
 const diff = await fs.readFile(path.join(root, '.ai-bridge', 'implementation-diff.patch'), 'utf8');
 const log = await fs.readFile(path.join(root, '.ai-bridge', 'execution-log.jsonl'), 'utf8');
+const handoffRunState = JSON.parse(await fs.readFile(path.join(root, '.ai-bridge', 'handoff-run-state.json'), 'utf8'));
 const app = await fs.readFile(path.join(root, 'app.txt'), 'utf8');
 
 for (const expected of ['Agent Execution Status', 'Agent: custom', 'Exit code: 0', 'fake agent completed']) {
@@ -98,6 +99,9 @@ if (!diff.includes('implemented with local/test-model')) {
 }
 if (!log.includes('"event":"execute_handoff"') || !log.includes('"agent":"custom"')) {
   throw new Error(`execution log missing structured event\n${log}`);
+}
+if (handoffRunState.state !== 'completed' || handoffRunState.exit_code !== 0 || handoffRunState.agent !== 'custom' || !handoffRunState.plan_hash) {
+  throw new Error(`execute-handoff did not write completed handoff-run-state.json\n${JSON.stringify(handoffRunState, null, 2)}`);
 }
 if (!app.includes('implemented with local/test-model: yes')) {
   throw new Error(`fake agent did not edit app.txt\n${app}`);
