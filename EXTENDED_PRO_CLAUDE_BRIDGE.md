@@ -30,10 +30,16 @@ The MCP server never launches Claude Code remotely. Execution happens in a termi
 codexpro watch-handoff --agent claude-code --yes
 ```
 
+If your Claude Code default model is unavailable or you want a specific model, pass it explicitly:
+
+```bash
+codexpro watch-handoff --agent claude-code --model sonnet --yes
+```
+
 When ChatGPT Pro calls `handoff_to_claude_code`, the watcher detects the new `.ai-bridge/current-plan.md` hash and runs:
 
 ```bash
-codexpro-claude-handoff --plan-file .ai-bridge/current-plan.md
+codexpro-claude-handoff --plan-file .ai-bridge/current-plan.md [--model sonnet]
 ```
 
 That helper calls the local Claude Code CLI with `claude -p <handoff prompt>`. It asks Claude Code to inspect the workspace, make scoped edits, run focused verification, and update `.ai-bridge/agent-status.md`.
@@ -45,6 +51,7 @@ On macOS, if no proxy environment variables are already set, `codexpro-claude-ha
 Useful optional environment variables:
 
 ```bash
+# Advanced passthrough for Claude Code flags not exposed by CodexPro:
 CLAUDE_HANDOFF_ARGS="--model claude-sonnet-4-5"
 CLAUDE_HANDOFF_BIN="/path/to/claude"
 HTTPS_PROXY="http://127.0.0.1:6382"

@@ -1191,8 +1191,8 @@ function buildExecutorCommand(args, root, planPath, planText) {
       agent: 'claude-code',
       model,
       command: 'codexpro-claude-handoff',
-      args: ['--plan-file', planPath],
-      displayArgs: ['--plan-file', path.relative(root, planPath)],
+      args: ['--plan-file', planPath, ...(model ? ['--model', model] : [])],
+      displayArgs: ['--plan-file', path.relative(root, planPath), ...(model ? ['--model', model] : [])],
       custom: false
     };
   }
@@ -1527,6 +1527,36 @@ function claimWatchPlan(root, contextDir, hash, request) {
   }
 }
 
+function watchPlanDonePath(root, contextDir, hash) {
+  return resolveWorkspaceFile(root, path.posix.join(contextDir, 'locks', `${hash}.done`));
+}
+
+function watchPlanDoneExists(root, contextDir, hash) {
+  try {
+    return fs.statSync(watchPlanDonePath(root, contextDir, hash)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+function markWatchPlanDone(root, contextDir, hash, request, result) {
+  const donePath = watchPlanDonePath(root, contextDir, hash);
+  fs.mkdirSync(path.dirname(donePath), { recursive: true, mode: 0o700 });
+  try {
+    fs.writeFileSync(donePath, `${JSON.stringify({
+      plan_hash: hash,
+      finished_at: new Date().toISOString(),
+      agent: request.commandInfo.agent,
+      model: request.commandInfo.model || undefined,
+      command: executorCommandPreview(request.commandInfo),
+      exit_code: result?.exitCode ?? null,
+      timed_out: Boolean(result?.timedOut)
+    }, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+  } catch (error) {
+    if (error?.code !== 'EEXIST') throw error;
+  }
+}
+
 function releaseWatchPlan(lockPath) {
   if (!lockPath) return;
   try {
@@ -1620,6 +1650,7 @@ async function runWatchHandoff(argv) {
   process.once('SIGTERM', stop);
 
   while (!stopped) {
+    state = readWatchState(statePath);
     if (!fs.existsSync(planPath)) {
       if (args.once) throw new Error(`No handoff plan found at ${path.relative(root, planPath)}.`);
       await sleep(pollIntervalMs);
@@ -1648,6 +1679,12 @@ async function runWatchHandoff(argv) {
       await sleep(pollIntervalMs);
       continue;
     }
+    if (watchPlanDoneExists(root, contextDir, currentHash)) {
+      statusLine(args.once ? 'ok' : 'wait', `Handoff plan already completed: ${currentHash.slice(0, 12)}`);
+      if (args.once) return;
+      await sleep(pollIntervalMs);
+      continue;
+    }
 
     if (args.dryRun) {
       printHandoffDryRun(request, 'CodexPro watch-handoff dry run');
@@ -1660,6 +1697,7 @@ async function runWatchHandoff(argv) {
     const claim = claimWatchPlan(root, contextDir, currentHash, request);
     if (!claim.claimed) {
       statusLine(args.once ? 'ok' : 'wait', `Handoff plan already claimed: ${currentHash.slice(0, 12)}`);
+      state = readWatchState(statePath);
       if (args.once) return;
       await sleep(pollIntervalMs);
       continue;
@@ -1694,6 +1732,9 @@ async function runWatchHandoff(argv) {
         planPath: path.posix.join(contextDir, 'current-plan.md')
       };
       writeWatchState(statePath, state);
+      if (succeeded && !watchPlanDoneExists(root, contextDir, currentHash)) {
+        markWatchPlanDone(root, contextDir, currentHash, request, execution.result);
+      }
       appendBridgeLog(root, contextDir, {
         event: 'watch_handoff_finished',
         plan_hash: currentHash,

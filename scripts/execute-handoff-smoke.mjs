@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -26,6 +26,35 @@ function quoteArg(value) {
 
 function planHash(planText) {
   return createHash('sha256').update(planText).digest('hex');
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitFor(predicate, label, timeoutMs = 5000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (await predicate()) return;
+    await sleep(50);
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
+function spawnCodexpro(args, options = {}) {
+  const child = spawn(process.execPath, ['scripts/codexpro.mjs', ...args], {
+    cwd: path.resolve('.'),
+    env: { ...process.env, NO_COLOR: '1' },
+    ...options
+  });
+  let stdout = '';
+  let stderr = '';
+  child.stdout?.on('data', (chunk) => { stdout += String(chunk); });
+  child.stderr?.on('data', (chunk) => { stderr += String(chunk); });
+  const done = new Promise((resolve) => {
+    child.on('exit', (code, signal) => resolve({ code, signal, stdout, stderr }));
+  });
+  return { child, done };
 }
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), 'codexpro-execute-handoff-'));
@@ -60,6 +89,21 @@ const dryRun = run([
 requireSuccess(dryRun, 'execute-handoff dry-run');
 if (!dryRun.stdout.includes('opencode run') || !dryRun.stdout.includes('provider/model')) {
   throw new Error(`dry-run output did not show adapter command\n${dryRun.stdout}`);
+}
+
+const claudeModelDryRun = run([
+  'execute-handoff',
+  '--root',
+  root,
+  '--agent',
+  'claude-code',
+  '--model',
+  'sonnet',
+  '--dry-run'
+]);
+requireSuccess(claudeModelDryRun, 'execute-handoff claude-code model dry-run');
+if (!claudeModelDryRun.stdout.includes('codexpro-claude-handoff') || !claudeModelDryRun.stdout.includes('--model sonnet')) {
+  throw new Error(`claude-code dry-run did not pass through --model\n${claudeModelDryRun.stdout}`);
 }
 
 const missingPlaceholder = run([
@@ -184,6 +228,64 @@ const watchLog = await fs.readFile(path.join(watchRoot, '.ai-bridge', 'execution
 if (!watchState.includes('lastPlanHash') || !watchLog.includes('"event":"watch_handoff_started"') || !watchLog.includes('"event":"watch_handoff_finished"')) {
   throw new Error(`watch did not write state/log\nstate:\n${watchState}\nlog:\n${watchLog}`);
 }
+
+const concurrentRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codexpro-watch-handoff-concurrent-'));
+await fs.mkdir(path.join(concurrentRoot, '.ai-bridge'), { recursive: true });
+const concurrentPlan = '# Concurrent watch plan\n\nOnly one watcher should execute this.\n';
+const concurrentHash = planHash(concurrentPlan);
+await fs.writeFile(path.join(concurrentRoot, '.ai-bridge', 'current-plan.md'), concurrentPlan, 'utf8');
+await fs.writeFile(path.join(concurrentRoot, 'app.txt'), 'start\n', 'utf8');
+await fs.writeFile(path.join(concurrentRoot, 'slow-watch-agent.mjs'), `
+import fs from 'node:fs';
+
+fs.appendFileSync('app.txt', 'concurrent execution started\\n');
+await new Promise((resolve) => setTimeout(resolve, 750));
+fs.appendFileSync('app.txt', 'concurrent execution finished\\n');
+console.log('slow watch agent completed');
+`, 'utf8');
+requireSuccess(spawnSync('git', ['init'], { cwd: concurrentRoot, encoding: 'utf8' }), 'concurrent watch git init');
+requireSuccess(spawnSync('git', ['add', 'app.txt'], { cwd: concurrentRoot, encoding: 'utf8' }), 'concurrent watch git add');
+const concurrentCommandBase = [
+  'watch-handoff',
+  '--root',
+  concurrentRoot,
+  '--agent',
+  'custom',
+  '--command',
+  `${process.execPath} slow-watch-agent.mjs --task-file {{plan_file}}`,
+  '--yes',
+  '--debounce-ms',
+  '0',
+  '--poll-interval-ms',
+  '100'
+];
+const watcherA = spawnCodexpro([...concurrentCommandBase, '--once']);
+const concurrentLockPath = path.join(concurrentRoot, '.ai-bridge', 'locks', `${concurrentHash}.lock`);
+await waitFor(async () => {
+  try {
+    await fs.access(concurrentLockPath);
+    return true;
+  } catch {
+    return false;
+  }
+}, 'concurrent watcher lock');
+const watcherB = spawnCodexpro(concurrentCommandBase);
+const watcherAResult = await watcherA.done;
+if (watcherAResult.code !== 0) {
+  watcherB.child.kill('SIGTERM');
+  throw new Error(`concurrent watcher A failed\nstdout:\n${watcherAResult.stdout}\nstderr:\n${watcherAResult.stderr}`);
+}
+await sleep(500);
+watcherB.child.kill('SIGTERM');
+const watcherBResult = await watcherB.done;
+if (![0, null].includes(watcherBResult.code) && watcherBResult.signal !== 'SIGTERM') {
+  throw new Error(`concurrent watcher B failed\nstdout:\n${watcherBResult.stdout}\nstderr:\n${watcherBResult.stderr}`);
+}
+const concurrentApp = await fs.readFile(path.join(concurrentRoot, 'app.txt'), 'utf8');
+if ((concurrentApp.match(/concurrent execution started/g) ?? []).length !== 1 || (concurrentApp.match(/concurrent execution finished/g) ?? []).length !== 1) {
+  throw new Error(`concurrent watchers executed the same plan more than once\n${concurrentApp}\nwatcher B stdout:\n${watcherBResult.stdout}`);
+}
+await fs.access(path.join(concurrentRoot, '.ai-bridge', 'locks', `${concurrentHash}.done`));
 
 const failedWatchRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codexpro-watch-handoff-failure-'));
 await fs.mkdir(path.join(failedWatchRoot, '.ai-bridge'), { recursive: true });

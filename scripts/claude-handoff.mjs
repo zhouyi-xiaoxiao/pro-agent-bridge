@@ -24,7 +24,7 @@ function parseArgs(argv) {
 
 function usage() {
   console.log(`Usage:
-  codexpro-claude-handoff --plan-file .ai-bridge/current-plan.md [--claude-bin claude]
+  codexpro-claude-handoff --plan-file .ai-bridge/current-plan.md [--model sonnet] [--claude-bin claude]
 
 Runs Claude Code in non-interactive print mode against a CodexPro handoff plan.
 The CodexPro watcher owns process execution, timeout, logs, and final diff capture.`);
@@ -137,11 +137,12 @@ async function main() {
   }
   const plan = readPlan(args.planFile);
   const claudeBin = String(args.claudeBin || process.env.CLAUDE_HANDOFF_BIN || process.env.CLAUDE_BIN || 'claude');
+  const model = String(args.model || '').trim();
   const prompt = buildPrompt(plan.path, plan.text);
   const extraArgs = process.env.CLAUDE_HANDOFF_ARGS
     ? process.env.CLAUDE_HANDOFF_ARGS.split(/\s+/).filter(Boolean)
     : [];
-  const childArgs = ['-p', prompt, ...extraArgs];
+  const childArgs = ['-p', ...(model ? ['--model', model] : []), ...extraArgs, prompt];
   const { env: childEnv, proxySummary } = claudeChildEnv(process.env);
 
   console.error(`[codexpro-claude-handoff] running ${claudeBin} -p <handoff prompt>`);
