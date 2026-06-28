@@ -14,10 +14,10 @@ The bridge does not unlock models, proxy model access, scrape ChatGPT, or bypass
 | --- | --- |
 | `read_project_context` | Reads `.ai-bridge/project-context.md`, detailed plans, checklists, current handoff, agent status, diff, execution log, and recent saved chat memory. |
 | `search_project_memory` | Searches saved `.ai-bridge` memory and planning artifacts before a new plan is written. |
-| `save_chat_summary` | Appends an explicit ChatGPT-provided conversation summary, decisions, todos, links, and tags to `.ai-bridge/chat-memory.jsonl`; can promote the summary to `.ai-bridge/project-context.md`. |
-| `save_chat_session` | Saves one explicit structured chat transcript or raw transcript into `.ai-bridge/chat-sessions/`. |
+| `save_chat_summary` | Appends an explicit ChatGPT-provided conversation summary, decisions, todos, links, and tags to `.ai-bridge/chat-memory.jsonl`; can promote the summary to `.ai-bridge/project-context.md`; rejects secret-looking content unless `allow_sensitive=true`. |
+| `save_chat_session` | Saves one explicit structured chat transcript or raw transcript into `.ai-bridge/chat-sessions/`; rejects secret-looking content unless `allow_sensitive=true`. |
 | `list_saved_chat_sessions` | Lists saved project-local chat sessions from `.ai-bridge/chat-session-index.jsonl`. |
-| `read_saved_chat_session` | Reads one saved chat session by `session_id` with bounded message and byte limits. |
+| `read_saved_chat_session` | Streams one saved chat session by `session_id` with bounded message and byte limits, so large saved sessions can still be read safely. |
 | `write_detailed_solution` | Writes `.ai-bridge/solution-plan.md`, `.ai-bridge/implementation-checklist.md`, and `.ai-bridge/review-criteria.md`; can also write `.ai-bridge/current-plan.md`. |
 | `handoff_to_claude_code` | Writes `.ai-bridge/current-plan.md` for Claude Code execution and returns a plan hash plus watcher command. |
 | `handoff_poll` | Read-only polling of `.ai-bridge/handoff-run-state.json`, agent status, implementation diff, and execution log. |
@@ -37,6 +37,8 @@ codexpro-claude-handoff --plan-file .ai-bridge/current-plan.md
 ```
 
 That helper calls the local Claude Code CLI with `claude -p <handoff prompt>`. It asks Claude Code to inspect the workspace, make scoped edits, run focused verification, and update `.ai-bridge/agent-status.md`.
+
+`codexpro-claude-handoff` keeps handoff plans under a conservative argv-size limit. For unusually large plans, use a custom `codexpro watch-handoff --agent custom --command ...` that streams or reads the plan file directly.
 
 Useful optional environment variables:
 
@@ -62,6 +64,8 @@ After connecting CodexPro in ChatGPT Developer Mode:
 ```
 
 This is the intended "Pro thinks deeply, local agent executes, Pro reviews" loop.
+
+`watch-handoff` consumes only successful plan hashes. If Claude Code or another executor exits non-zero for a plan, rerunning the watcher with the same unchanged plan retries it instead of silently skipping it.
 
 ## Extended Pro Model Boundary
 
@@ -89,7 +93,7 @@ When the target conversation is open in Chrome, Codex or Claude Code can run a l
 codexpro capture-chatgpt-session --root /path/to/repo --find-chatgpt
 ```
 
-This writes a project-local saved session that `read_saved_chat_session` can read later. The default backend uses Chrome AppleScript automation and may require enabling:
+This writes a project-local saved session that `read_saved_chat_session` can read later. Duplicate identical turns are preserved. The default backend uses Chrome AppleScript automation and may require enabling:
 
 ```text
 Chrome -> View -> Developer -> Allow JavaScript from Apple Events
@@ -105,6 +109,21 @@ codexpro capture-chatgpt-session \
 ```
 
 The scroll capture is best-effort because ChatGPT's web DOM and lazy-loading behavior can change. It is still explicit, local, and auditable: no hidden account-history API is used, transcript data is written only into the workspace, and `--max-session-bytes` bounds accidental oversized writes.
+
+By default, capture refuses to write secret-looking values into `.ai-bridge`. Use `--allow-sensitive` only when you intentionally want to keep a full private transcript locally.
+
+## Claude Code Local Health
+
+CodexPro can wire plans to Claude Code only after the local Claude Code CLI can make model calls. Verify:
+
+```bash
+claude --version
+claude auth status
+claude mcp list
+claude -p --model sonnet --no-session-persistence --tools '' -- 'Reply exactly CODEXPRO_CLAUDE_SMOKE_OK.'
+```
+
+If the final command returns `403 Request not allowed`, Claude Code is installed and may even be logged in, but Anthropic's first-party API path is refusing the model request. Refresh auth with `claude auth login` or `claude setup-token`, or fix the account/network policy, then rerun the smoke before relying on `--agent claude-code`.
 
 ## Files Created in `.ai-bridge`
 

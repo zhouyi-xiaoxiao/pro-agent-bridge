@@ -92,6 +92,9 @@ const fixtureHtml = `<!doctype html>
     <div class="spacer"></div>
     <article data-message-author-role="assistant">Middle assistant message for scroll capture.</article>
     <div class="spacer"></div>
+    <article data-message-author-role="user">Repeat duplicate user message.</article>
+    <article data-message-author-role="user">Repeat duplicate user message.</article>
+    <div class="spacer"></div>
     <article data-message-author-role="user">Bottom user message for scroll capture.</article>
     <div class="spacer"></div>
   </main>
@@ -144,10 +147,13 @@ try {
   for (const expected of [
     'Top user message for scroll capture.',
     'Middle assistant message for scroll capture.',
+    'Repeat duplicate user message.',
     'Bottom user message for scroll capture.'
   ]) {
     if (!saved.includes(expected)) throw new Error(`saved transcript missing: ${expected}\n${saved}`);
   }
+  const duplicateCount = (saved.match(/Repeat duplicate user message\./g) || []).length;
+  if (duplicateCount !== 2) throw new Error(`duplicate fixture messages should be preserved twice, got ${duplicateCount}\n${saved}`);
   const index = await fs.readFile(path.join(root, '.ai-bridge', 'chat-session-index.jsonl'), 'utf8');
   if (!index.includes('fixture-scroll-session')) throw new Error(`index missing fixture session\n${index}`);
   const emptyDryRun = runCapture([

@@ -104,6 +104,14 @@ function isHiddenName(name: string): boolean {
   return name.startsWith(".") && name !== "." && name !== "..";
 }
 
+async function chmodBestEffort(absPath: string, mode: number): Promise<void> {
+  try {
+    await fsp.chmod(absPath, mode);
+  } catch {
+    // Best-effort permission repair for filesystems that support chmod.
+  }
+}
+
 export async function repoTree(config: CodexProConfig, guard: PathGuard, workspace: Workspace, options: TreeOptions): Promise<TreeResult> {
   const target = guard.resolve(workspace, options.path ?? ".");
   const stat = await fsp.stat(target.absPath);
@@ -337,12 +345,17 @@ export async function ensureAiBridge(config: CodexProConfig, guard: PathGuard, w
     "session-log.jsonl": ""
   };
   const created: string[] = [];
+  const bridgeRoot = guard.resolve(workspace, config.contextDir, { forWrite: true });
+  await fsp.mkdir(bridgeRoot.absPath, { recursive: true, mode: 0o700 });
+  await chmodBestEffort(bridgeRoot.absPath, 0o700);
   for (const [name, content] of Object.entries(files)) {
     const rel = `${config.contextDir}/${name}`;
     const resolved = guard.resolve(workspace, rel, { forWrite: true });
     if (!fs.existsSync(resolved.absPath)) {
-      await fsp.mkdir(path.dirname(resolved.absPath), { recursive: true });
-      await fsp.writeFile(resolved.absPath, content, "utf8");
+      await fsp.mkdir(path.dirname(resolved.absPath), { recursive: true, mode: 0o700 });
+      await chmodBestEffort(path.dirname(resolved.absPath), 0o700);
+      await fsp.writeFile(resolved.absPath, content, { encoding: "utf8", mode: 0o600 });
+      await chmodBestEffort(resolved.absPath, 0o600);
       created.push(rel);
     }
   }

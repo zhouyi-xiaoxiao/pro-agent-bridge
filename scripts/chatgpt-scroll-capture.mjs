@@ -28,6 +28,7 @@ Options:
   --settle-ms <ms>          Wait after each scroll for lazy loading. Default: 900.
   --stable-rounds <n>       Stop upward scan after this many stable top rounds. Default: 3.
   --max-session-bytes <n>   Refuse to write JSONL transcripts larger than this. Default: 25000000.
+  --allow-sensitive         Allow secret-looking values to be written to the local private bridge.
   --enable-apple-events     Try to click Chrome's "Allow JavaScript from Apple Events" menu item first.
   --dry-run                 Capture and report counts without writing files.
   --help                    Show this message.
@@ -45,6 +46,7 @@ function parseArgs(argv) {
     if (key === 'help') out.help = true;
     else if (key === 'find-chatgpt') out.findChatgpt = true;
     else if (key === 'allow-non-chatgpt') out.allowNonChatgpt = true;
+    else if (key === 'allow-sensitive') out.allowSensitive = true;
     else if (key === 'enable-apple-events') out.enableAppleEvents = true;
     else if (key === 'dry-run') out.dryRun = true;
     else {
@@ -107,6 +109,44 @@ function normalizeId(value, seed) {
 
 function normalizeProvider(value) {
   return cleanOneLine(value, 'chatgpt-web-scroll', 40).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'chatgpt-web-scroll';
+}
+
+const OPENAI_SECRET_PATTERN = /\bsk-[A-Za-z0-9_-]{10,}\b/g;
+const SECRET_ASSIGNMENT_PATTERN = /\b[A-Za-z0-9_]*(?:API[_-]?KEY|TOKEN|SECRET|PASSWORD|PRIVATE[_-]?KEY)[A-Za-z0-9_]*\s*=\s*(?:"[^"\r\n]{12,}"|'[^'\r\n]{12,}'|`[^`\r\n]{12,}`|[A-Za-z0-9_./+=-]{20,})/gi;
+
+function isPlaceholderSecret(value) {
+  const normalized = value.toLowerCase();
+  return (
+    normalized.includes('[redacted_secret]') ||
+    normalized.includes('replace-me') ||
+    normalized.includes('your-api-key-here') ||
+    normalized.includes('<openai_api_key>') ||
+    normalized.includes('process.env.') ||
+    normalized.includes('import.meta.env.') ||
+    normalized.includes('os.environ') ||
+    normalized.includes('getenv(') ||
+    normalized === 'sk-...' ||
+    normalized.endsWith('=sk-...')
+  );
+}
+
+function hasSecretValue(text) {
+  for (const pattern of [OPENAI_SECRET_PATTERN, SECRET_ASSIGNMENT_PATTERN]) {
+    pattern.lastIndex = 0;
+    let match;
+    while ((match = pattern.exec(text)) !== null) {
+      if (!isPlaceholderSecret(match[0])) return true;
+    }
+  }
+  return false;
+}
+
+async function chmodBestEffort(absPath, mode) {
+  try {
+    await fsp.chmod(absPath, mode);
+  } catch {
+    // Best-effort permission repair for filesystems that support chmod.
+  }
 }
 
 function sessionIdFromUrl(url) {
@@ -231,17 +271,22 @@ async function fetchJson(url) {
   return response.json();
 }
 
-async function cdpTarget(cdpUrl, urlContains = "") {
+async function cdpTarget(cdpUrl, options = {}) {
   const base = String(cdpUrl || "").replace(/\/+$/, "");
   if (!base) throw new Error("--cdp-url must not be empty.");
   const targets = await fetchJson(`${base}/json/list`);
   const pages = targets.filter((target) => target.type === "page" && target.webSocketDebuggerUrl);
   if (!pages.length) throw new Error(`No page targets found at ${base}/json/list`);
-  const wanted = String(urlContains || "").trim();
+  const wanted = String(options.urlContains || "").trim();
   const target = wanted
     ? pages.find((page) => String(page.url || "").includes(wanted))
-    : pages[0];
-  if (!target) throw new Error(`No CDP page target matched ${wanted}`);
+    : options.findChatgpt
+      ? pages.find((page) => isChatGptUrl(page.url))
+      : pages.find((page) => isChatGptUrl(page.url)) || pages[0];
+  if (!target) {
+    const hint = wanted ? ` containing ${wanted}` : " matching a ChatGPT URL";
+    throw new Error(`No CDP page target found${hint}`);
+  }
   return {
     title: target.title || "",
     url: target.url || "",
@@ -254,22 +299,42 @@ async function createCdpExecutor(webSocketDebuggerUrl) {
   const socket = new WebSocket(webSocketDebuggerUrl);
   let nextId = 1;
   const pending = new Map();
+  const rejectAll = (error) => {
+    for (const { reject, timer } of pending.values()) {
+      clearTimeout(timer);
+      reject(error);
+    }
+    pending.clear();
+  };
   socket.on("message", (chunk) => {
     const message = JSON.parse(String(chunk));
     if (!message.id || !pending.has(message.id)) return;
-    const { resolve, reject } = pending.get(message.id);
+    const { resolve, reject, timer } = pending.get(message.id);
+    clearTimeout(timer);
     pending.delete(message.id);
     if (message.error) reject(new Error(message.error.message || JSON.stringify(message.error)));
     else resolve(message.result);
   });
+  socket.on("close", () => rejectAll(new Error("CDP WebSocket closed before Chrome returned a result.")));
+  socket.on("error", (error) => rejectAll(error instanceof Error ? error : new Error(String(error))));
   await new Promise((resolve, reject) => {
     socket.once("open", resolve);
     socket.once("error", reject);
   });
   const call = (method, params = {}) => new Promise((resolve, reject) => {
     const id = nextId++;
-    pending.set(id, { resolve, reject });
-    socket.send(JSON.stringify({ id, method, params }));
+    const timer = setTimeout(() => {
+      pending.delete(id);
+      reject(new Error(`CDP ${method} timed out after 30000 ms.`));
+    }, 30_000);
+    pending.set(id, { resolve, reject, timer });
+    try {
+      socket.send(JSON.stringify({ id, method, params }));
+    } catch (error) {
+      clearTimeout(timer);
+      pending.delete(id);
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
   });
   const evaluate = async (expression) => {
     const result = await call("Runtime.evaluate", {
@@ -319,16 +384,21 @@ const extractJs = `
   const fallback = primary.length ? [] : Array.from(document.querySelectorAll('[data-testid^="conversation-turn"], article'));
   const nodes = primary.length ? primary : fallback;
   const messages = [];
-  const seen = new Set();
-  for (const node of nodes) {
+  const occurrences = new Map();
+  for (let ordinal = 0; ordinal < nodes.length; ordinal += 1) {
+    const node = nodes[ordinal];
     const text = norm(node.innerText || node.textContent || '');
     if (!text || text.length < 2) continue;
     if (/^ChatGPT can make mistakes/i.test(text)) continue;
     const role = roleFor(node);
-    const key = role + '\\n' + text;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    messages.push({ role, content: text });
+    const baseKey = role + '\\n' + text;
+    const occurrence = occurrences.get(baseKey) || 0;
+    occurrences.set(baseKey, occurrence + 1);
+    const messageId =
+      (node.getAttribute && node.getAttribute('data-message-id')) ||
+      (node.closest && node.closest('[data-message-id]') && node.closest('[data-message-id]').getAttribute('data-message-id')) ||
+      '';
+    messages.push({ role, content: text, dom_id: messageId, occurrence, ordinal });
   }
   const scrolling = document.scrollingElement || document.documentElement || document.body;
   return JSON.stringify({
@@ -375,7 +445,9 @@ function mergeMessages(store, messages, phase, iteration, orderCounter) {
     const role = cleanOneLine(message.role, 'unknown', 32).toLowerCase();
     const content = String(message.content || '').trim();
     if (!content) continue;
-    const key = sha256(`${role}\n${content}`);
+    const domId = cleanOneLine(message.dom_id, '', 160);
+    const occurrence = Number.isFinite(Number(message.occurrence)) ? Number(message.occurrence) : 0;
+    const key = domId ? `dom:${domId}` : `occ:${sha256(`${role}\n${content}`)}:${occurrence}`;
     const existing = store.get(key);
     if (existing) {
       if (phase === 'down' && existing.downOrder === undefined) existing.downOrder = orderCounter.next++;
@@ -391,7 +463,9 @@ function mergeMessages(store, messages, phase, iteration, orderCounter) {
       lastSeenPhase: phase,
       lastSeenIteration: iteration,
       firstOrder: orderCounter.next++,
-      downOrder: phase === 'down' ? orderCounter.next++ : undefined
+      downOrder: phase === 'down' ? orderCounter.next++ : undefined,
+      captureKey: key,
+      occurrence
     };
     store.set(key, record);
     added += 1;
@@ -458,7 +532,10 @@ async function writeSession(root, contextDir, session, options = {}) {
   const maxSessionBytes = numberOption(options.maxSessionBytes, 25_000_000, 100_000, 250_000_000);
   const bridgeDir = resolveInside(root, contextDir);
   const sessionsDir = resolveInside(root, path.join(contextDir, 'chat-sessions'));
+  await fsp.mkdir(bridgeDir, { recursive: true, mode: 0o700 });
+  await chmodBestEffort(bridgeDir, 0o700);
   await fsp.mkdir(sessionsDir, { recursive: true, mode: 0o700 });
+  await chmodBestEffort(sessionsDir, 0o700);
   const relPath = path.join(contextDir, 'chat-sessions', `${session.provider}-${session.sessionId}.jsonl`).replace(/\\/g, '/');
   const absPath = resolveInside(root, relPath);
   const rows = [
@@ -483,10 +560,15 @@ async function writeSession(root, contextDir, session, options = {}) {
         'Rerun with a larger explicit limit if you intentionally want to store this transcript.'
     );
   }
+  if (!options.allowSensitive && hasSecretValue(body)) {
+    throw new Error(
+      'Captured session contains secret-looking content. Redact it first or rerun with --allow-sensitive to intentionally store it in the local private bridge.'
+    );
+  }
   await fsp.writeFile(absPath, body, { encoding: 'utf8', mode: 0o600 });
+  await chmodBestEffort(absPath, 0o600);
   const sha = sha256(body);
   const indexPath = resolveInside(root, path.join(contextDir, 'chat-session-index.jsonl'));
-  await fsp.mkdir(bridgeDir, { recursive: true, mode: 0o700 });
   await fsp.appendFile(indexPath, `${JSON.stringify({
     ts: new Date().toISOString(),
     provider: session.provider,
@@ -498,6 +580,7 @@ async function writeSession(root, contextDir, session, options = {}) {
     path: relPath,
     sha256: sha
   })}\n`, { encoding: 'utf8', mode: 0o600 });
+  await chmodBestEffort(indexPath, 0o600);
   return { relPath, absPath, indexPath, sha };
 }
 
@@ -507,19 +590,21 @@ async function main() {
     usage();
     return;
   }
-  if (process.platform !== 'darwin') {
-    throw new Error('capture-chatgpt-session currently requires macOS Google Chrome automation.');
-  }
   let tab;
   let executeJs = executeChromeJs;
   let cdpExecutor;
   if (args.cdpUrl) {
-    tab = await cdpTarget(args.cdpUrl, args.cdpUrlContains);
+    tab = await cdpTarget(args.cdpUrl, { urlContains: args.cdpUrlContains, findChatgpt: args.findChatgpt });
     cdpExecutor = await createCdpExecutor(tab.webSocketDebuggerUrl);
     executeJs = cdpExecutor.evaluate;
-  } else if (args.enableAppleEvents) {
-    const result = enableAppleEventsMenu();
-    console.error(`[codexpro-capture-chatgpt] Apple Events menu: ${result}`);
+  } else {
+    if (process.platform !== 'darwin') {
+      throw new Error('capture-chatgpt-session without --cdp-url requires macOS Google Chrome Apple Events automation.');
+    }
+    if (args.enableAppleEvents) {
+      const result = enableAppleEventsMenu();
+      console.error(`[codexpro-capture-chatgpt] Apple Events menu: ${result}`);
+    }
   }
 
   if (!tab) tab = activeTabInfo();
@@ -582,7 +667,7 @@ async function main() {
     return;
   }
 
-  const writeResult = await writeSession(root, contextDir, session, { maxSessionBytes });
+  const writeResult = await writeSession(root, contextDir, session, { maxSessionBytes, allowSensitive: Boolean(args.allowSensitive) });
   console.log(`Saved ChatGPT session: ${writeResult.relPath}`);
   console.log(`Messages: ${session.messages.length}`);
   console.log(`Index: ${path.relative(root, writeResult.indexPath)}`);

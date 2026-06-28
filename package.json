@@ -44,6 +44,7 @@
     "EXTENDED_PRO_CLAUDE_BRIDGE.md",
     "CHATGPT_PRO_REVIEW_PACKET.md",
     "TECHNICAL_ARCHITECTURE.md",
+    "SECOND_ROUND_AUDIT.md",
     "AGENTS.example.md",
     "config.example.env"
   ],

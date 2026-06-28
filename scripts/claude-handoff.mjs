@@ -3,6 +3,8 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+const MAX_PLAN_BYTES = 120_000;
+
 function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -33,7 +35,12 @@ function readPlan(filePath) {
   const resolved = path.resolve(filePath);
   const stat = fs.statSync(resolved);
   if (!stat.isFile()) throw new Error(`Not a file: ${resolved}`);
-  if (stat.size > 800_000) throw new Error(`Plan file is too large: ${stat.size} bytes.`);
+  if (stat.size > MAX_PLAN_BYTES) {
+    throw new Error(
+      `Plan file is too large for Claude Code argv handoff: ${stat.size} bytes. ` +
+        `Keep it under ${MAX_PLAN_BYTES} bytes or pass a custom --command that streams the plan file.`
+    );
+  }
   return { path: resolved, text: fs.readFileSync(resolved, 'utf8') };
 }
 

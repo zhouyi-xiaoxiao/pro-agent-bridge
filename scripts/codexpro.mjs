@@ -1483,6 +1483,12 @@ function writeWatchState(statePath, state) {
   fs.writeFileSync(statePath, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
 }
 
+function successfulWatchPlanHash(state) {
+  if (state.lastSucceededHash) return state.lastSucceededHash;
+  if (state.lastPlanHash && state.exitCode === 0) return state.lastPlanHash;
+  return '';
+}
+
 function writeHandoffRunState(root, contextDir, state) {
   const bridgeDir = resolveWorkspaceFile(root, contextDir);
   fs.mkdirSync(bridgeDir, { recursive: true, mode: 0o700 });
@@ -1544,7 +1550,7 @@ async function runWatchHandoff(argv) {
   const pollIntervalMs = numberOption(args.pollIntervalMs ?? args.pollInterval, 2000, 250, 60_000);
   const debounceMs = numberOption(args.debounceMs, 500, 0, 30_000);
   let state = readWatchState(statePath);
-  let lastDryRunHash = state.lastPlanHash ?? '';
+  let lastDryRunHash = state.lastDryRunHash ?? '';
   let lastSkippedHash = '';
   let stopped = false;
 
@@ -1597,7 +1603,7 @@ async function runWatchHandoff(argv) {
       await sleep(pollIntervalMs);
       continue;
     }
-    if (state.lastPlanHash === currentHash || lastDryRunHash === currentHash) {
+    if (successfulWatchPlanHash(state) === currentHash || lastDryRunHash === currentHash) {
       statusLine(args.once ? 'ok' : 'wait', `No new handoff plan: ${currentHash.slice(0, 12)}`);
       if (args.once) return;
       await sleep(pollIntervalMs);
@@ -1622,12 +1628,18 @@ async function runWatchHandoff(argv) {
 
     const execution = await executeHandoffRequest(request, { ...args, yes: true }, { skipConfirmation: true });
     const exitCode = execution.result?.exitCode ?? null;
+    const succeeded = exitCode === 0 && !execution.result?.timedOut && !execution.result?.spawnError;
     state = {
-      lastPlanHash: currentHash,
+      lastPlanHash: succeeded ? currentHash : successfulWatchPlanHash(state),
+      lastAttemptedHash: currentHash,
+      lastSucceededHash: succeeded ? currentHash : successfulWatchPlanHash(state),
+      lastFailedHash: succeeded ? '' : currentHash,
       lastRanAt: new Date().toISOString(),
       agent: request.commandInfo.agent,
       model: request.commandInfo.model || undefined,
       exitCode,
+      timedOut: Boolean(execution.result?.timedOut),
+      status: succeeded ? 'completed' : 'failed',
       planPath: path.posix.join(contextDir, 'current-plan.md')
     };
     writeWatchState(statePath, state);

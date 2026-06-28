@@ -1,5 +1,7 @@
+import fs from "node:fs";
 import fsp from "node:fs/promises";
 import { createHash } from "node:crypto";
+import { createInterface } from "node:readline";
 import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
@@ -14,7 +16,7 @@ import { buildProContext, exportProContext } from "./proContext.js";
 import { codexproInventory, loadSkill } from "./capabilitiesOps.js";
 import { listCodexSessions, readCodexSession } from "./codexSessions.js";
 import { TOOL_CARD_LEGACY_URIS, TOOL_CARD_MIME_TYPE, TOOL_CARD_URI, toolCardWidgetHtml } from "./toolCardWidget.js";
-import { redactSensitiveText, redactStructured } from "./redact.js";
+import { hasSecretValue, redactSensitiveText, redactStructured } from "./redact.js";
 
 function errorText(error: unknown): string {
   if (error instanceof Error) return redactSensitiveText(`${error.name}: ${error.message}`);
@@ -483,8 +485,54 @@ async function appendWorkspaceJsonl(
   event: Record<string, unknown>
 ): Promise<void> {
   const resolved = guard.resolve(workspace, relPath, { forWrite: true });
-  await fsp.mkdir(path.dirname(resolved.absPath), { recursive: true });
-  await fsp.appendFile(resolved.absPath, `${JSON.stringify(event)}\n`, "utf8");
+  await ensurePrivateBridgePath(config, guard, workspace, resolved.absPath);
+  await fsp.appendFile(resolved.absPath, `${JSON.stringify(event)}\n`, { encoding: "utf8", mode: 0o600 });
+  await chmodBestEffort(resolved.absPath, 0o600);
+}
+
+async function chmodBestEffort(absPath: string, mode: number): Promise<void> {
+  try {
+    await fsp.chmod(absPath, mode);
+  } catch {
+    // Best-effort permission hardening for filesystems that support chmod.
+  }
+}
+
+async function ensurePrivateBridgePath(
+  config: CodexProConfig,
+  guard: PathGuard,
+  workspace: Workspace,
+  absPath: string
+): Promise<void> {
+  const bridgeRoot = guard.resolve(workspace, config.contextDir, { forWrite: true }).absPath;
+  await fsp.mkdir(bridgeRoot, { recursive: true, mode: 0o700 });
+  await chmodBestEffort(bridgeRoot, 0o700);
+
+  const dir = path.dirname(absPath);
+  await fsp.mkdir(dir, { recursive: true, mode: 0o700 });
+  await chmodBestEffort(dir, 0o700);
+}
+
+async function writeWorkspacePrivateTextFile(
+  config: CodexProConfig,
+  guard: PathGuard,
+  workspace: Workspace,
+  relPath: string,
+  content: string,
+  options: { append?: boolean } = {}
+): Promise<void> {
+  const resolved = guard.resolve(workspace, relPath, { forWrite: true });
+  await ensurePrivateBridgePath(config, guard, workspace, resolved.absPath);
+  if (options.append) await fsp.appendFile(resolved.absPath, content, { encoding: "utf8", mode: 0o600 });
+  else await fsp.writeFile(resolved.absPath, content, { encoding: "utf8", mode: 0o600 });
+  await chmodBestEffort(resolved.absPath, 0o600);
+}
+
+function assertNoSecretLikeText(label: string, text: string, allowSensitive: boolean): void {
+  if (allowSensitive || !hasSecretValue(text)) return;
+  throw new CodexProError(
+    `${label} contains secret-looking content. Redact it first, or set allow_sensitive=true to intentionally store it in this project-local private bridge.`
+  );
 }
 
 function parseJsonl(text: string): Record<string, unknown>[] {
@@ -648,6 +696,100 @@ function parseSavedChatSession(text: string, maxMessages: number, maxTotalBytes:
     });
   }
   return { meta, messages, truncated, totalMessages };
+}
+
+function savedChatMessageFromRow(row: Record<string, unknown>, fallbackIndex: number): SavedChatSessionMessage {
+  const rowIndex = Number(row.index);
+  return {
+    type: "message",
+    index: Number.isFinite(rowIndex) ? rowIndex : fallbackIndex,
+    role: normalizeChatRole(row.role),
+    content: String(row.content ?? ""),
+    ...(typeof row.ts === "string" ? { ts: row.ts } : {})
+  };
+}
+
+async function assertTextFileSample(absPath: string, fileBytes: number): Promise<void> {
+  const handle = await fsp.open(absPath, "r");
+  try {
+    const sampleSize = Math.min(fileBytes, 4096);
+    if (!sampleSize) return;
+    const buffer = Buffer.alloc(sampleSize);
+    const { bytesRead } = await handle.read(buffer, 0, sampleSize, 0);
+    const sample = buffer.subarray(0, bytesRead);
+    if (sample.includes(0)) throw new CodexProError("Saved chat session appears to be binary, not UTF-8 JSONL text.");
+  } finally {
+    await handle.close();
+  }
+}
+
+async function readSavedChatSessionStreaming(
+  config: CodexProConfig,
+  guard: PathGuard,
+  workspace: Workspace,
+  filePath: string,
+  maxMessages: number,
+  maxTotalBytes: number
+): Promise<{
+  meta: Record<string, unknown>;
+  messages: SavedChatSessionMessage[];
+  truncated: boolean;
+  totalMessages: number;
+  fileBytes: number;
+  sha256: string;
+}> {
+  const resolved = guard.resolve(workspace, filePath);
+  const stat = await fsp.stat(resolved.absPath);
+  if (!stat.isFile()) throw new CodexProError(`Not a file: ${resolved.relPath}`);
+  if (stat.size > config.maxWriteBytes) {
+    throw new CodexProError(`Saved chat session is too large (${stat.size} bytes). Limit: ${config.maxWriteBytes} bytes.`);
+  }
+  await assertTextFileSample(resolved.absPath, stat.size);
+
+  let meta: Record<string, unknown> = {};
+  const messages: SavedChatSessionMessage[] = [];
+  let totalMessages = 0;
+  let usedBytes = 0;
+  let truncated = false;
+  const hash = createHash("sha256");
+  const stream = fs.createReadStream(resolved.absPath, { encoding: "utf8" });
+  stream.on("data", (chunk) => hash.update(String(chunk)));
+
+  const rl = createInterface({ input: stream, crlfDelay: Infinity });
+  for await (const line of rl) {
+    if (!line.trim()) continue;
+    let row: Record<string, unknown>;
+    try {
+      const parsed = JSON.parse(line);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      row = parsed as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (row.type === "session_meta") {
+      meta = row;
+      continue;
+    }
+    if (row.type !== "message") continue;
+    totalMessages += 1;
+    const content = String(row.content ?? "");
+    const nextBytes = Buffer.byteLength(content, "utf8");
+    if (messages.length >= maxMessages || usedBytes + nextBytes > maxTotalBytes) {
+      truncated = true;
+      continue;
+    }
+    usedBytes += nextBytes;
+    messages.push(savedChatMessageFromRow(row, messages.length));
+  }
+
+  return {
+    meta,
+    messages,
+    truncated,
+    totalMessages,
+    fileBytes: stat.size,
+    sha256: hash.digest("hex")
+  };
 }
 
 async function readChatSessionIndex(
@@ -1220,7 +1362,8 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
         todos: z.array(z.string()).optional().describe("Open follow-up items."),
         links: z.array(z.string()).optional().describe("Useful file paths, thread ids, URLs, commands, or handles."),
         tags: z.array(z.string()).optional().describe("Search tags."),
-        update_project_context: z.boolean().optional().describe("Also rewrite .ai-bridge/project-context.md from this summary. Default: true.")
+        update_project_context: z.boolean().optional().describe("Also rewrite .ai-bridge/project-context.md from this summary. Default: true."),
+        allow_sensitive: z.boolean().optional().describe("Allow secret-looking values to be stored in the local private bridge. Default: false.")
       },
       annotations: HANDOFF_WRITE_ANNOTATIONS,
       _meta: {
@@ -1238,6 +1381,7 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
       const todos = normalizeList(args.todos);
       const links = normalizeList(args.links);
       const tags = normalizeList(args.tags, 40);
+      const allowSensitive = parseBool(args.allow_sensitive, false);
       const event = {
         ts: new Date().toISOString(),
         title: cleanOneLine(args.title, "ChatGPT Pro summary"),
@@ -1247,6 +1391,7 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
         links,
         tags
       };
+      assertNoSecretLikeText("Chat summary", JSON.stringify(event), allowSensitive);
       const memoryPath = `${config.contextDir}/chat-memory.jsonl`;
       await appendWorkspaceJsonl(config, guard, workspace, memoryPath, event);
       const written = [memoryPath];
@@ -1410,7 +1555,8 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
           timestamp: z.union([z.string(), z.number()]).optional()
         })).optional().describe("Ordered session messages to persist."),
         transcript: z.string().optional().describe("Fallback raw transcript text if structured messages are unavailable."),
-        append: z.boolean().optional().describe("Append messages to an existing saved session instead of replacing it. Default: false.")
+        append: z.boolean().optional().describe("Append messages to an existing saved session instead of replacing it. Default: false."),
+        allow_sensitive: z.boolean().optional().describe("Allow secret-looking values to be stored in the local private bridge. Default: false.")
       },
       annotations: HANDOFF_WRITE_ANNOTATIONS,
       _meta: {
@@ -1431,8 +1577,6 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
       const tags = normalizeList(args.tags, 60);
       const sessionPath = chatSessionFilePath(config, provider, sessionId);
       const indexPath = chatSessionIndexPath(config);
-      const resolved = guard.resolve(workspace, sessionPath, { forWrite: true });
-      await fsp.mkdir(path.dirname(resolved.absPath), { recursive: true });
 
       const existing = parseBool(args.append, false)
         ? await readOptionalWorkspaceFile(config, guard, workspace, sessionPath, config.maxWriteBytes)
@@ -1448,12 +1592,12 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
         header,
         ...renumbered
       ].map((row) => JSON.stringify(row)).join("\n") + "\n";
+      assertNoSecretLikeText("Chat session", bodyRows, parseBool(args.allow_sensitive, false));
       const nextSize = Buffer.byteLength(existing, "utf8") + Buffer.byteLength(bodyRows, "utf8");
       if (nextSize > config.maxWriteBytes) {
         throw new CodexProError(`Saved chat session would exceed CODEXPRO_MAX_WRITE_BYTES (${config.maxWriteBytes}).`);
       }
-      if (existing) await fsp.appendFile(resolved.absPath, bodyRows, "utf8");
-      else await fsp.writeFile(resolved.absPath, bodyRows, "utf8");
+      await writeWorkspacePrivateTextFile(config, guard, workspace, sessionPath, bodyRows, { append: Boolean(existing) });
 
       const indexEvent = {
         ts: new Date().toISOString(),
@@ -1585,8 +1729,7 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
       const { relPath, provider } = await resolveSavedChatSessionPath(config, guard, workspace, sessionId, args.provider);
       const maxMessages = limitInt(args.max_messages, 120, 1, 500);
       const maxTotalBytes = limitInt(args.max_total_bytes, 120_000, 4_000, 800_000);
-      const raw = await readRawTextFileBounded(config, guard, workspace, relPath, Math.min(maxTotalBytes * 2, config.maxReadBytes));
-      const parsed = parseSavedChatSession(raw, maxMessages, maxTotalBytes);
+      const parsed = await readSavedChatSessionStreaming(config, guard, workspace, relPath, maxMessages, maxTotalBytes);
       if (!parsed.meta.session_id) {
         parsed.meta = {
           type: "session_meta",
@@ -1609,7 +1752,8 @@ export function createCodexProServer(config: CodexProConfig): McpServer {
         message_count: parsed.messages.length,
         total_messages: parsed.totalMessages,
         truncated: parsed.truncated,
-        sha256: sha256Hex(raw)
+        file_bytes: parsed.fileBytes,
+        sha256: parsed.sha256
       });
     }
   );

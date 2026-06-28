@@ -444,6 +444,48 @@ const appendedSessionRead = await client.request('tools/call', {
 if (appendedSessionRead.structuredContent.total_messages !== 4 || !appendedSessionRead.content?.[0]?.text?.includes('Appended session audit marker')) {
   throw new Error(`save_chat_session append did not preserve existing transcript: ${JSON.stringify(appendedSessionRead.structuredContent)}`);
 }
+if (process.platform !== 'win32') {
+  const bridgeMode = (await fs.stat(path.join(tmp, '.ai-bridge'))).mode & 0o777;
+  const sessionMode = (await fs.stat(path.join(tmp, appendedSessionRead.structuredContent.path))).mode & 0o777;
+  if ((bridgeMode & 0o077) !== 0 || (sessionMode & 0o077) !== 0) {
+    throw new Error(`.ai-bridge permissions should be private, got dir=${bridgeMode.toString(8)} session=${sessionMode.toString(8)}`);
+  }
+}
+await expectToolError('save_chat_session', {
+  workspace_id: ws,
+  session_id: 'secret-session',
+  messages: [{ role: 'user', content: 'OPENAI_API_KEY=sk-realSecretValue123' }]
+}, /secret-looking/i);
+const largeSessionSave = await client.request('tools/call', {
+  name: 'save_chat_session',
+  arguments: {
+    workspace_id: ws,
+    provider: 'chatgpt',
+    session_id: 'large-streaming-session',
+    title: 'Large Streaming Session',
+    messages: [
+      { role: 'user', content: 'Large session leading message.' },
+      { role: 'assistant', content: 'x'.repeat(220000) }
+    ]
+  }
+});
+const largeSessionRead = await client.request('tools/call', {
+  name: 'read_saved_chat_session',
+  arguments: {
+    workspace_id: ws,
+    session_id: largeSessionSave.structuredContent.session_id,
+    max_messages: 1,
+    max_total_bytes: 8000
+  }
+});
+if (
+  largeSessionRead.structuredContent.file_bytes <= 180000 ||
+  largeSessionRead.structuredContent.total_messages !== 2 ||
+  largeSessionRead.structuredContent.message_count !== 1 ||
+  !largeSessionRead.structuredContent.truncated
+) {
+  throw new Error(`large saved chat session did not stream/truncate as expected: ${JSON.stringify(largeSessionRead.structuredContent)}`);
+}
 await expectToolError('read_saved_chat_session', {
   workspace_id: ws,
   session_id: 'missing-session-id'

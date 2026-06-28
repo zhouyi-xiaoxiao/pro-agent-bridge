@@ -169,6 +169,49 @@ if (!watchState.includes('lastPlanHash') || !watchLog.includes('"event":"watch_h
   throw new Error(`watch did not write state/log\nstate:\n${watchState}\nlog:\n${watchLog}`);
 }
 
+const failedWatchRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codexpro-watch-handoff-failure-'));
+await fs.mkdir(path.join(failedWatchRoot, '.ai-bridge'), { recursive: true });
+await fs.writeFile(path.join(failedWatchRoot, '.ai-bridge', 'current-plan.md'), '# Failing watch plan\n\nRetry this exact plan after failure.\n', 'utf8');
+await fs.writeFile(path.join(failedWatchRoot, 'app.txt'), 'start\n', 'utf8');
+await fs.writeFile(path.join(failedWatchRoot, 'fail-watch-agent.mjs'), `
+import fs from 'node:fs';
+
+const taskIndex = process.argv.indexOf('--task-file');
+if (taskIndex < 0) throw new Error('missing --task-file');
+fs.appendFileSync('app.txt', 'failed watch attempt\\n');
+console.log('watch agent failing intentionally');
+process.exit(7);
+`, 'utf8');
+const failedWatchCommand = [
+  'watch-handoff',
+  '--root',
+  failedWatchRoot,
+  '--agent',
+  'custom',
+  '--command',
+  `${quoteArg(process.execPath)} fail-watch-agent.mjs --task-file {{plan_file}}`,
+  '--once',
+  '--yes',
+  '--debounce-ms',
+  '0'
+];
+const firstFailedWatch = run(failedWatchCommand);
+if (firstFailedWatch.status === 0) {
+  throw new Error(`watch failure fixture unexpectedly succeeded\nstdout:\n${firstFailedWatch.stdout}\nstderr:\n${firstFailedWatch.stderr}`);
+}
+const secondFailedWatch = run(failedWatchCommand);
+if (secondFailedWatch.status === 0) {
+  throw new Error(`watch failure retry fixture unexpectedly succeeded\nstdout:\n${secondFailedWatch.stdout}\nstderr:\n${secondFailedWatch.stderr}`);
+}
+const failedWatchApp = await fs.readFile(path.join(failedWatchRoot, 'app.txt'), 'utf8');
+if ((failedWatchApp.match(/failed watch attempt/g) ?? []).length !== 2) {
+  throw new Error(`watch did not retry the same failed plan\n${failedWatchApp}\nsecond stdout:\n${secondFailedWatch.stdout}`);
+}
+const failedWatchState = JSON.parse(await fs.readFile(path.join(failedWatchRoot, '.ai-bridge', 'watch-handoff-state.json'), 'utf8'));
+if (!failedWatchState.lastFailedHash || failedWatchState.lastPlanHash) {
+  throw new Error(`watch failure state should record lastFailedHash without consuming lastPlanHash\n${JSON.stringify(failedWatchState, null, 2)}`);
+}
+
 const loopRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codexpro-loop-handoff-'));
 await fs.mkdir(path.join(loopRoot, '.ai-bridge'), { recursive: true });
 await fs.writeFile(path.join(loopRoot, '.ai-bridge', 'current-plan.md'), '# Loop plan 1\n\nAppend loop first marker.\n', 'utf8');

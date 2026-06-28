@@ -53,11 +53,24 @@ All bridge state is project-local under `.ai-bridge/`, which is ignored by this 
 CodexPro supports reliable reading of a single saved session, not bulk private ChatGPT account history.
 
 - `save_chat_session` persists structured `messages` or a raw `transcript`.
+- `save_chat_summary` and `save_chat_session` reject secret-looking content by default. Use `allow_sensitive=true` only when you intentionally want to store private local bridge data.
 - `append=true` appends new messages and writes a fresh `session_meta` row so later reads see current metadata.
-- `read_saved_chat_session` requires `session_id`, searches the saved index, verifies the path stays inside `.ai-bridge/chat-sessions/`, and returns bounded messages/bytes.
+- `read_saved_chat_session` requires `session_id`, searches the saved index, verifies the path stays inside `.ai-bridge/chat-sessions/`, and streams JSONL so large saved sessions can still return bounded messages/bytes without first loading the whole file through the ordinary read limit.
 - `codexpro capture-chatgpt-session` can create those saved sessions from the currently visible ChatGPT page by scrolling the page.
 
 The scroll capture helper is best effort because the ChatGPT web DOM and lazy loading can change. It is still useful for the user's desired workflow: open one session, let Codex/Claude Code scroll upward to load older turns, scan downward, then save a project-local transcript that MCP can read later.
+
+## Second-Round Audit Hardening
+
+The second Extended Pro review led to these hardening changes:
+
+- Large saved-session reads are streaming JSONL reads with full-file SHA-256 reporting.
+- `.ai-bridge/` directories are created or repaired with private directory permissions, and JSONL/session files are created or repaired with private file permissions where the filesystem supports chmod.
+- Session and summary persistence block secret-looking values by default; the ChatGPT web capture CLI has the same default block plus an explicit `--allow-sensitive` override.
+- ChatGPT web capture preserves duplicate identical turns by using DOM message ids when available and occurrence indexes otherwise.
+- CDP capture is no longer blocked by the macOS Apple Events platform check, chooses ChatGPT targets more deliberately, and rejects pending browser calls on close/error/timeout.
+- `watch-handoff` only treats successful plan hashes as consumed, so a failed same-plan execution is retried by default.
+- `codexpro-claude-handoff` caps plan size before invoking `claude -p` to avoid OS argument-length failures.
 
 ## Extended Pro Workflow
 
@@ -92,11 +105,12 @@ Useful options:
 --max-scrolls <n>          upward/downward scroll limit
 --settle-ms <ms>           wait for lazy loading
 --max-session-bytes <n>    safety bound for JSONL transcript writes
+--allow-sensitive          intentionally allow secret-looking transcript values
 --dry-run                  capture counts without writing
 --cdp-url <url>            use a DevTools-enabled Chrome page
 ```
 
-The helper writes transcripts with `0600` mode when creating new files. It does not send transcript data anywhere remote.
+The helper writes transcripts with private file permissions when possible. It does not send transcript data anywhere remote.
 
 ## Security Boundaries
 
@@ -105,7 +119,27 @@ The helper writes transcripts with `0600` mode when creating new files. It does 
 - The MCP server never starts Claude Code. Local execution is a separate CLI/watch process.
 - The capture helper reads only the currently open Chrome tab or a specifically selected CDP page.
 - `.ai-bridge/` can contain private transcripts and should stay out of git.
+- `.ai-bridge/` writes are private-by-default best effort, but filesystem ACLs and backups are still outside CodexPro's control.
 - Public tunnel use must keep bearer-token auth enabled.
+
+## Claude Code Local Verification
+
+The bridge can verify local Claude Code installation and wiring, but it cannot grant Claude model access. Use:
+
+```bash
+command -v claude
+claude --version
+claude auth status
+claude mcp list
+claude -p --model sonnet --no-session-persistence --tools '' -- 'Reply exactly CODEXPRO_CLAUDE_SMOKE_OK.'
+```
+
+Expected healthy state:
+
+- `claude --version` prints a Claude Code version.
+- `claude auth status` reports `loggedIn: true` for the intended account or provider.
+- `claude mcp list` shows the configured local MCP servers as connected.
+- The `claude -p` smoke prints the fixed marker. If it returns `403 Request not allowed`, the CLI is installed but the Anthropic account/network/API authorization is refusing model calls; refresh Claude Code auth with `claude auth login` or `claude setup-token`, then rerun the smoke.
 
 ## Verification Matrix
 
@@ -127,4 +161,3 @@ Manual Extended Pro verification:
 3. Select `Pro 扩展` from the model/intelligence picker.
 4. Confirm the composer label reads `Pro 扩展`.
 5. Submit a short repo-review prompt and verify the new conversation URL changes to `/c/<id>`.
-
