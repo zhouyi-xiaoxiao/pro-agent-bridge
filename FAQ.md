@@ -235,7 +235,7 @@ The `codexpro` GitHub username already exists, so this repo cannot use `codexpro
 The clean GitHub Pages URL for this project is:
 
 ```text
-https://rebel0789.github.io/codexpro/
+https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/
 ```
 
 ## Is CodexPro production safe?

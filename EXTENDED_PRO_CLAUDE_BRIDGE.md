@@ -1,6 +1,6 @@
-# Extended Pro + Claude Code Bridge
+# Pro Agent Bridge: Extended Pro + Claude Code
 
-This fork extends CodexPro from a direct ChatGPT-to-workspace MCP bridge into a reviewable planning and execution loop:
+Pro Agent Bridge extends the CodexPro-compatible CLI from a direct ChatGPT-to-workspace MCP bridge into a reviewable planning and execution loop:
 
 1. ChatGPT Pro writes durable project memory and an implementation-ready plan.
 2. A local terminal process runs the plan with Claude Code, Codex, OpenCode, Pi, or a custom executor.

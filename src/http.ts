@@ -417,7 +417,7 @@ function onboardingPage(config: CodexProConfig): string {
   const writeTone = config.writeMode === "workspace" ? "agent" : config.writeMode;
   const rootArg = shellQuote(config.defaultRoot);
   const sessionArg = shellQuote(config.bashSessionId || "main");
-  const githubUrl = "https://github.com/rebel0789/codexpro";
+  const githubUrl = "https://github.com/zhouyi-xiaoxiao/pro-agent-bridge";
   const npmUrl = "https://www.npmjs.com/package/codexpro";
   const docsUrl = "https://rebel0789.github.io/codexpro/";
   const chatgptUrl = "https://chatgpt.com/#settings/Connectors";

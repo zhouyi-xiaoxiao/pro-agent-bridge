@@ -3,25 +3,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CodexPro - Use ChatGPT like your local coding agent</title>
+    <title>Pro Agent Bridge - ChatGPT Pro to local coding agents</title>
     <meta
       name="description"
-      content="CodexPro connects ChatGPT Developer Mode to one local workspace through MCP so ChatGPT can inspect, edit, verify, and hand off code safely."
+      content="Pro Agent Bridge connects ChatGPT Pro and Developer Mode to one local workspace through MCP so ChatGPT can inspect, edit, verify, and hand off work to Codex, Claude Code, or other local agents."
     />
-    <meta property="og:title" content="CodexPro" />
-    <meta property="og:description" content="Use ChatGPT like your local coding agent for one token-protected workspace." />
-    <meta property="og:image" content="https://rebel0789.github.io/codexpro/og.svg" />
+    <meta property="og:title" content="Pro Agent Bridge" />
+    <meta property="og:description" content="Bridge ChatGPT Pro / Extended Pro to local Codex, Claude Code, and MCP agent workflows." />
+    <meta property="og:image" content="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/og.svg" />
     <meta name="theme-color" content="#0b1220" />
-    <link rel="alternate" hreflang="zh-CN" href="https://rebel0789.github.io/codexpro/zh.html" />
+    <link rel="alternate" hreflang="zh-CN" href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/zh.html" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <a class="skip-link" href="#quickstart">Skip to setup</a>
     <header class="site-header">
-      <a class="brand" href="#top" aria-label="CodexPro home">
+      <a class="brand" href="#top" aria-label="Pro Agent Bridge home">
         <img class="brand-mark" src="./favicon.svg" width="34" height="34" alt="" aria-hidden="true" />
-        <span>CodexPro</span>
+        <span>Pro Agent Bridge</span>
       </a>
       <nav aria-label="Primary navigation">
         <a href="#quickstart">Start</a>
@@ -30,18 +30,18 @@
         <a href="#faq">FAQ</a>
         <a href="#stop">Stop</a>
         <a href="./zh.html">中文</a>
-        <a class="nav-star" href="https://github.com/rebel0789/codexpro"><img src="./star.svg" alt="" aria-hidden="true" />Star on GitHub</a>
+        <a class="nav-star" href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge"><img src="./star.svg" alt="" aria-hidden="true" />Star on GitHub</a>
       </nav>
     </header>
 
     <main id="top">
       <section class="hero">
         <div class="hero-copy">
-          <p class="launch-pill"><img src="./star.svg" alt="" aria-hidden="true" />Local MCP bridge</p>
+          <p class="launch-pill"><img src="./star.svg" alt="" aria-hidden="true" />Local MCP + agent bridge</p>
           <p class="eyebrow">Install in your repo</p>
-          <h1>Use ChatGPT like your local coding agent.</h1>
+          <h1>Bridge ChatGPT Pro to local coding agents.</h1>
           <p class="hero-lede">
-            Install the CLI, run setup inside one project, then paste the copied Server URL into ChatGPT Developer Mode. ChatGPT gets bounded tools for that workspace: context, search, exact edits, git review, safe verification, and handoff files.
+            Install the CLI, run setup inside one project, then paste the copied Server URL into ChatGPT Developer Mode. ChatGPT gets bounded tools for that workspace: context, search, exact edits, git review, safe verification, and handoff files for Codex, Claude Code, OpenCode, Pi, or a custom local executor.
           </p>
           <div class="install-line" role="group" aria-label="Install command">
             <code>npm install -g codexpro
@@ -52,16 +52,16 @@ codexpro setup</code>
             <span>one workspace</span>
             <span>token-protected URL</span>
             <span>safe bash default</span>
-            <span>repo-backed context</span>
+            <span>Claude Code handoff</span>
           </div>
           <div class="hero-actions">
-            <a class="button primary" href="#quickstart">Install CodexPro</a>
-            <a class="button secondary star-button" href="https://github.com/rebel0789/codexpro"><img src="./star.svg" alt="" aria-hidden="true" />Star on GitHub</a>
+            <a class="button primary" href="#quickstart">Install Pro Agent Bridge</a>
+            <a class="button secondary star-button" href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge"><img src="./star.svg" alt="" aria-hidden="true" />Star on GitHub</a>
             <a class="button secondary" href="https://www.npmjs.com/package/codexpro">View npm package</a>
           </div>
         </div>
 
-        <div class="hero-visual" aria-label="CodexPro connection model">
+        <div class="hero-visual" aria-label="Pro Agent Bridge connection model">
           <div class="workspace-demo blueprint">
             <div class="demo-status">
               <span class="status-dot" aria-hidden="true"></span>
@@ -79,7 +79,7 @@ codexpro setup</code>
               </div>
               <div>
                 <span>02</span>
-                <strong>CodexPro</strong>
+                <strong>Pro Agent Bridge</strong>
                 <p>Token-protected MCP server with workspace, bash, write, and tool modes.</p>
               </div>
               <div>
@@ -519,11 +519,11 @@ codexpro settings delete --yes</code></pre>
         </div>
 
         <div class="link-row" aria-label="Documentation links">
-          <a class="star-link" href="https://github.com/rebel0789/codexpro"><img src="./star.svg" alt="" aria-hidden="true" />Star the GitHub repo</a>
+          <a class="star-link" href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge"><img src="./star.svg" alt="" aria-hidden="true" />Star the GitHub repo</a>
           <a href="https://www.npmjs.com/package/codexpro">npm package</a>
-          <a href="https://github.com/rebel0789/codexpro/blob/main/DOMAIN_SETUP.md">Stable URL guide</a>
-          <a href="https://github.com/rebel0789/codexpro/blob/main/FAQ.md">FAQ</a>
-          <a href="https://github.com/rebel0789/codexpro/blob/main/SECURITY.md">Security notes</a>
+          <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/DOMAIN_SETUP.md">Stable URL guide</a>
+          <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/FAQ.md">FAQ</a>
+          <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/SECURITY.md">Security notes</a>
         </div>
       </section>
 
@@ -602,11 +602,11 @@ codexpro settings delete --yes</code></pre>
     </main>
 
     <footer class="site-footer">
-      <span>CodexPro</span>
-      <a class="star-link" href="https://github.com/rebel0789/codexpro"><img src="./star.svg" alt="" aria-hidden="true" />Star on GitHub</a>
+      <span>Pro Agent Bridge</span>
+      <a class="star-link" href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge"><img src="./star.svg" alt="" aria-hidden="true" />Star on GitHub</a>
       <a href="https://www.npmjs.com/package/codexpro">npm</a>
       <a href="./zh.html">中文</a>
-      <a href="https://github.com/rebel0789/codexpro/blob/main/SECURITY.md">Security</a>
+      <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/SECURITY.md">Security</a>
     </footer>
 
     <script src="./script.js"></script>

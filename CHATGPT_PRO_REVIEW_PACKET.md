@@ -1,10 +1,10 @@
-# ChatGPT Pro Review Packet
+# Pro Agent Bridge Review Packet
 
-Please review this CodexPro fork as if you are the ChatGPT Pro planning/review model connected through MCP.
+Please review Pro Agent Bridge as if you are the ChatGPT Pro planning/review model connected through MCP.
 
 ## Objective
 
-Extend `rebel0789/codexpro` so ChatGPT Pro can do more than produce a loose action plan:
+Evolve the CodexPro-compatible CLI into Pro Agent Bridge so ChatGPT Pro can do more than produce a loose action plan:
 
 - save durable project and conversation memory in `.ai-bridge`;
 - write detailed implementation plans, checklists, and review criteria;
@@ -12,7 +12,7 @@ Extend `rebel0789/codexpro` so ChatGPT Pro can do more than produce a loose acti
 - poll execution status, logs, and diffs for review;
 - save and read explicit single-session chat transcripts;
 - optionally capture the currently visible ChatGPT web session by local Chrome scroll automation;
-- preserve the product boundary that CodexPro is an MCP bridge, not a model proxy or quota bypass.
+- preserve the product boundary that Pro Agent Bridge is an MCP and local-agent bridge, not a model proxy or quota bypass.
 
 ## Implementation Summary
 

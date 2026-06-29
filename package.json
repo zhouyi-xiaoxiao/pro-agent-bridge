@@ -1,23 +1,25 @@
 {
   "name": "codexpro",
   "version": "0.28.5",
-  "description": "A local MCP/App SDK-style connector that lets ChatGPT inspect, edit, and hand off work to Codex inside a local dev workspace.",
+  "description": "A local MCP/App SDK-style bridge that lets ChatGPT Pro inspect a workspace and hand work to Codex, Claude Code, or other local agents.",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/zhouyi-xiaoxiao/codexpro-extended-bridge.git"
+    "url": "git+https://github.com/zhouyi-xiaoxiao/pro-agent-bridge.git"
   },
   "bugs": {
-    "url": "https://github.com/zhouyi-xiaoxiao/codexpro-extended-bridge/issues"
+    "url": "https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/issues"
   },
-  "homepage": "https://github.com/zhouyi-xiaoxiao/codexpro-extended-bridge#readme",
+  "homepage": "https://github.com/zhouyi-xiaoxiao/pro-agent-bridge#readme",
   "keywords": [
     "mcp",
     "chatgpt",
     "codex",
     "apps-sdk",
     "codexpro",
+    "claude-code",
+    "agent-bridge",
     "local-development",
     "cloudflare-tunnel",
     "ngrok"

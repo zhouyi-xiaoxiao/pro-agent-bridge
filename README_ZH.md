@@ -1,26 +1,26 @@
 <p align="center">
-  <img src="docs/favicon.svg" width="72" height="72" alt="CodexPro logo">
+  <img src="docs/favicon.svg" width="72" height="72" alt="Pro Agent Bridge logo">
 </p>
 
-<h1 align="center">CodexPro</h1>
+<h1 align="center">Pro Agent Bridge</h1>
 
 <p align="center">
-  让 ChatGPT Web 看见你的本地仓库，并像本地代码代理一样工作。
+  把 ChatGPT Pro / Extended Pro 连接到本地 Codex、Claude Code 和 MCP agent 工作流。
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/codexpro"><img alt="npm" src="https://img.shields.io/npm/v/codexpro?style=flat-square"></a>
-  <a href="https://github.com/rebel0789/codexpro/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/rebel0789/codexpro/ci.yml?branch=main&style=flat-square"></a>
-  <a href="https://github.com/rebel0789/codexpro/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/rebel0789/codexpro?style=flat-square"></a>
-  <a href="https://rebel0789.github.io/codexpro/zh.html"><img alt="中文站点" src="https://img.shields.io/badge/site-%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3-67e8f9?style=flat-square"></a>
+  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/zhouyi-xiaoxiao/pro-agent-bridge/ci.yml?branch=main&style=flat-square"></a>
+  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/zhouyi-xiaoxiao/pro-agent-bridge?style=flat-square"></a>
+  <a href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/zh.html"><img alt="中文站点" src="https://img.shields.io/badge/site-%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3-67e8f9?style=flat-square"></a>
 </p>
 
 <p align="center">
   <a href="README.md">English</a>
   ·
-  <a href="https://rebel0789.github.io/codexpro/zh.html">中文网站</a>
+  <a href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/zh.html">中文网站</a>
   ·
-  <a href="https://github.com/rebel0789/codexpro">GitHub 点星</a>
+  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge">GitHub 点星</a>
   ·
   <a href="https://www.npmjs.com/package/codexpro">npm</a>
   ·
@@ -33,7 +33,7 @@
 
 ## 安装
 
-CodexPro 需要 Node.js 20+，以及能使用 Apps / Developer Mode 的 ChatGPT Plus 或 Pro 账号。
+Pro Agent Bridge 目前仍通过兼容 CLI 名称 `codexpro` 发布。它需要 Node.js 20+，以及能使用 Apps / Developer Mode 的 ChatGPT Plus 或 Pro 账号。
 
 先安装 CLI：
 
@@ -48,7 +48,7 @@ cd /path/to/your/repo
 codexpro setup
 ```
 
-CodexPro 会自动复制 ChatGPT Server URL。到 ChatGPT 打开 `Settings -> Apps -> Advanced settings -> Create app`，粘贴这个 URL，并选择 `Authentication: No Authentication / None`。
+`codexpro` CLI 会自动复制 ChatGPT Server URL。到 ChatGPT 打开 `Settings -> Apps -> Advanced settings -> Create app`，粘贴这个 URL，并选择 `Authentication: No Authentication / None`。
 
 以后同一个仓库日常启动只需要：
 
@@ -56,15 +56,15 @@ CodexPro 会自动复制 ChatGPT Server URL。到 ChatGPT 打开 `Settings -> Ap
 codexpro start
 ```
 
-CodexPro 把 ChatGPT Developer Mode 变成本地仓库的 MCP 代码代理。ChatGPT 可以读取文件、搜索代码、查看 git 状态、写入或精确编辑文件，并运行安全范围内的验证命令。
+Pro Agent Bridge 把 ChatGPT Developer Mode 变成本地仓库的 MCP 代码与 handoff 工作台。ChatGPT 可以读取文件、搜索代码、查看 git 状态、写入或精确编辑文件、把计划交给 Claude Code，并运行安全范围内的验证命令。
 
-CodexPro 不是速率限制绕过工具。它不会绕过、提升、合并、转售或修改 ChatGPT、Codex、OpenAI 或第三方模型的限制。它只是通过官方 Developer Mode / MCP App 路径，把你自己的 ChatGPT 会话连接到你自己的本地仓库。
+Pro Agent Bridge 不是速率限制绕过工具。它不会绕过、提升、合并、转售或修改 ChatGPT、Codex、Claude Code、OpenAI、Anthropic 或第三方模型的限制。它只是通过官方 Developer Mode / MCP App 路径，把你自己的 ChatGPT 会话连接到你自己的本地仓库和本地执行器。
 
-如果 Codex 当前工作流暂时不可用，而你的 ChatGPT 页面仍然可用，CodexPro 可以让你继续在同一个本地仓库上工作。反过来也一样：ChatGPT 负责高上下文规划，Codex、OpenCode、Pi 或其他本地执行器负责终端里的实际执行。
+如果 Codex 或 Claude Code 的某个工作流暂时不可用，而你的 ChatGPT 页面仍然可用，Pro Agent Bridge 可以让你继续在同一个本地仓库上工作。反过来也一样：ChatGPT 负责高上下文规划，Codex、Claude Code、OpenCode、Pi 或其他本地执行器负责终端里的实际执行。
 
 ## 适合谁
 
-CodexPro 适合已经使用 ChatGPT Plus 或 Pro 做开发的人：
+Pro Agent Bridge 适合已经使用 ChatGPT Plus 或 Pro 做开发的人：
 
 - 想让 ChatGPT Web 直接读取本地代码，而不是反复复制文件片段。
 - 想把 `AGENTS.md`、`.ai-bridge`、git diff、源码文件这些 Codex 风格上下文给 ChatGPT。
@@ -439,7 +439,7 @@ q      停止 CodexPro
 
 ## 开源与贡献
 
-项目地址：[github.com/rebel0789/codexpro](https://github.com/rebel0789/codexpro)
+项目地址：[github.com/zhouyi-xiaoxiao/pro-agent-bridge](https://github.com/zhouyi-xiaoxiao/pro-agent-bridge)
 
 欢迎提 issue、补文档、补平台兼容性、补测试。提交 PR 前请至少运行：
 

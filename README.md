@@ -1,28 +1,28 @@
 <p align="center">
-  <img src="docs/favicon.svg" width="72" height="72" alt="CodexPro logo">
+  <img src="docs/favicon.svg" width="72" height="72" alt="Pro Agent Bridge logo">
 </p>
 
-<h1 align="center">CodexPro</h1>
+<h1 align="center">Pro Agent Bridge</h1>
 
 <p align="center">
-  Use ChatGPT like your local coding agent for one token-protected workspace.
+  Bridge ChatGPT Pro / Extended Pro to local Codex, Claude Code, and MCP agent workflows.
 </p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/codexpro"><img alt="npm" src="https://img.shields.io/npm/v/codexpro?style=flat-square"></a>
-  <a href="https://github.com/rebel0789/codexpro/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/rebel0789/codexpro/ci.yml?branch=main&style=flat-square"></a>
-  <a href="https://github.com/rebel0789/codexpro/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/rebel0789/codexpro?style=flat-square"></a>
-  <a href="https://rebel0789.github.io/codexpro/"><img alt="Website" src="https://img.shields.io/badge/site-GitHub%20Pages-67e8f9?style=flat-square"></a>
+  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/zhouyi-xiaoxiao/pro-agent-bridge/ci.yml?branch=main&style=flat-square"></a>
+  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/zhouyi-xiaoxiao/pro-agent-bridge?style=flat-square"></a>
+  <a href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/"><img alt="Website" src="https://img.shields.io/badge/site-GitHub%20Pages-67e8f9?style=flat-square"></a>
 </p>
 
 <p align="center">
-  <a href="https://rebel0789.github.io/codexpro/">Website</a>
+  <a href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/">Website</a>
   ·
   <a href="README_ZH.md">中文 README</a>
   ·
-  <a href="https://rebel0789.github.io/codexpro/zh.html">中文网站</a>
+  <a href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/zh.html">中文网站</a>
   ·
-  <a href="https://github.com/rebel0789/codexpro">Star on GitHub</a>
+  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge">Star on GitHub</a>
   ·
   <a href="https://www.npmjs.com/package/codexpro">npm</a>
   ·
@@ -35,7 +35,7 @@
 
 ## Installation
 
-CodexPro requires Node.js 20+ and a ChatGPT Plus or Pro account with Apps / Developer Mode access.
+Pro Agent Bridge is currently shipped through the `codexpro` CLI for compatibility. It requires Node.js 20+ and a ChatGPT Plus or Pro account with Apps / Developer Mode access.
 
 Install the CLI:
 
@@ -50,7 +50,7 @@ cd /path/to/your/repo
 codexpro setup
 ```
 
-CodexPro copies the ChatGPT Server URL for you. In ChatGPT, open `Settings -> Apps -> Advanced settings -> Create app`, paste that URL, and choose `Authentication: No Authentication / None`.
+The `codexpro` CLI copies the ChatGPT Server URL for you. In ChatGPT, open `Settings -> Apps -> Advanced settings -> Create app`, paste that URL, and choose `Authentication: No Authentication / None`.
 
 After setup, daily use from the same repo is just:
 
@@ -58,9 +58,9 @@ After setup, daily use from the same repo is just:
 codexpro start
 ```
 
-CodexPro turns ChatGPT Developer Mode into a local coding agent for that folder. It gives ChatGPT bounded MCP tools for file reads, code search, exact edits, git inspection, safe verification commands, and explicit repo-backed context from `AGENTS.md`, `.ai-bridge`, git state, and selected source files.
+Pro Agent Bridge turns ChatGPT Developer Mode into a local coding and handoff surface for that folder. It gives ChatGPT bounded MCP tools for file reads, code search, exact edits, git inspection, safe verification commands, Claude Code handoff, and explicit repo-backed context from `AGENTS.md`, `.ai-bridge`, git state, and selected source files.
 
-CodexPro is not a rate-limit bypass, model proxy, hosted SaaS, or OS sandbox. It uses ChatGPT's official Developer Mode and MCP app path to connect your own ChatGPT session to your own local repo. ChatGPT and Codex remain separate product surfaces, each subject to its own plan limits, safety rules, and availability.
+Pro Agent Bridge is not a rate-limit bypass, model proxy, hosted SaaS, or OS sandbox. It uses ChatGPT's official Developer Mode and MCP app path to connect your own ChatGPT session to your own local repo. ChatGPT, Codex, and Claude Code remain separate product surfaces, each subject to its own plan limits, safety rules, and availability.
 
 ## Quick Choices
 
@@ -77,16 +77,16 @@ CodexPro is not a rate-limit bypass, model proxy, hosted SaaS, or OS sandbox. It
 
 ## Product Boundary
 
-| CodexPro is | CodexPro is not |
+| Pro Agent Bridge is | Pro Agent Bridge is not |
 | --- | --- |
 | A local MCP bridge for the workspace you choose | A hosted coding service |
 | A way for ChatGPT Developer Mode to inspect, edit, verify, and hand off work | A model unlock, proxy, resale layer, or quota workaround |
 | A repo-backed context system using explicit files such as `AGENTS.md` and `.ai-bridge` | Permanent ChatGPT memory across every chat |
 | A developer tool with conservative defaults | An OS sandbox or substitute for repo/terminal judgment |
 
-## Why CodexPro?
+## Why Pro Agent Bridge?
 
-| ChatGPT gets | CodexPro provides |
+| ChatGPT gets | Pro Agent Bridge provides |
 | --- | --- |
 | Repo context | `AGENTS.md`, `.ai-bridge`, git status, git diff, selected source files |
 | Coding actions | `read`, `write`, `edit`, `search`, `show_changes` |
@@ -98,9 +98,9 @@ If one workflow is unavailable and another product surface you already have acce
 
 If your ChatGPT account exposes a stronger model in the web app, and that model/surface can call Developer Mode apps, CodexPro lets it work against your local repo through MCP. Some ChatGPT model surfaces may not be able to call connectors or MCP tools directly. CodexPro does not provide, proxy, resell, or unlock models; it gives compatible ChatGPT sessions local coding tools and repo context.
 
-## CodexPro vs generic workspace bridges
+## Pro Agent Bridge vs generic workspace bridges
 
-The high-level shape can look similar because both use a local MCP bridge, a tunnel, and a workspace root. CodexPro is narrower and more opinionated: it is built to make ChatGPT Developer Mode work like a practical local coding agent for one repo.
+The high-level shape can look similar because both use a local MCP bridge, a tunnel, and a workspace root. Pro Agent Bridge is narrower and more opinionated: it is built to make ChatGPT Developer Mode work like a practical local coding and agent-handoff surface for one repo.
 
 | CodexPro focuses on | Why it matters |
 | --- | --- |

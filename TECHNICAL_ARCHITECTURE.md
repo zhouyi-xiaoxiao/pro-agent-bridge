@@ -1,9 +1,9 @@
-# CodexPro Extended Bridge Technical Architecture
+# Pro Agent Bridge Technical Architecture
 
-This fork is a local workspace bridge for a user-controlled ChatGPT Pro / Pro Extended session. It does not provide model access, proxy ChatGPT, bypass quotas, or read hidden account history. The design goal is simple:
+Pro Agent Bridge is a local workspace and handoff bridge for a user-controlled ChatGPT Pro / Pro Extended session. It keeps the `codexpro` CLI entrypoint for compatibility, but the scope now includes Codex, Claude Code, OpenCode, Pi, and custom local executors. It does not provide model access, proxy ChatGPT, bypass quotas, or read hidden account history. The design goal is simple:
 
 1. ChatGPT Pro / Pro Extended produces detailed plans, reviews, and project memory.
-2. CodexPro exposes bounded local repo tools and `.ai-bridge` artifacts through MCP.
+2. Pro Agent Bridge exposes bounded local repo tools and `.ai-bridge` artifacts through MCP.
 3. A user-started local CLI watcher can hand implementation to Claude Code, Codex, OpenCode, Pi, or a custom command.
 4. ChatGPT Pro reviews local status, logs, diffs, and saved sessions.
 

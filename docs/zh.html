@@ -3,25 +3,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>CodexPro - 让 ChatGPT Web 连接本地仓库</title>
+    <title>Pro Agent Bridge - 连接 ChatGPT Pro 与本地代码代理</title>
     <meta
       name="description"
-      content="CodexPro 通过 ChatGPT Developer Mode 和 MCP，把 ChatGPT Web 连接到你的本地代码仓库，支持读取、搜索、编辑、git 检查和安全验证。"
+      content="Pro Agent Bridge 通过 ChatGPT Developer Mode 和 MCP，把 ChatGPT Pro 连接到你的本地代码仓库、Codex、Claude Code 和其他本地执行器。"
     />
-    <meta property="og:title" content="CodexPro 中文文档" />
-    <meta property="og:description" content="让 ChatGPT Web 看见 Codex 风格仓库上下文，并像本地代码代理一样工作。" />
-    <meta property="og:image" content="https://rebel0789.github.io/codexpro/og.svg" />
+    <meta property="og:title" content="Pro Agent Bridge 中文文档" />
+    <meta property="og:description" content="把 ChatGPT Pro / Extended Pro 连接到本地 Codex、Claude Code 和 MCP agent 工作流。" />
+    <meta property="og:image" content="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/og.svg" />
     <meta name="theme-color" content="#0b1220" />
-    <link rel="alternate" hreflang="en" href="https://rebel0789.github.io/codexpro/" />
+    <link rel="alternate" hreflang="en" href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/" />
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
     <a class="skip-link" href="#quickstart">跳到设置</a>
     <header class="site-header">
-      <a class="brand" href="#top" aria-label="CodexPro 中文首页">
+      <a class="brand" href="#top" aria-label="Pro Agent Bridge 中文首页">
         <img class="brand-mark" src="./favicon.svg" width="34" height="34" alt="" aria-hidden="true" />
-        <span>CodexPro</span>
+        <span>Pro Agent Bridge</span>
       </a>
       <nav aria-label="主导航">
         <a href="#quickstart">开始</a>
@@ -30,18 +30,18 @@
         <a href="#modes">模式</a>
         <a href="#faq">FAQ</a>
         <a href="./index.html">English</a>
-        <a class="nav-star" href="https://github.com/rebel0789/codexpro"><img src="./star.svg" alt="" aria-hidden="true" />GitHub 点星</a>
+        <a class="nav-star" href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge"><img src="./star.svg" alt="" aria-hidden="true" />GitHub 点星</a>
       </nav>
     </header>
 
     <main id="top">
       <section class="hero">
         <div class="hero-copy">
-          <p class="launch-pill"><img src="./star.svg" alt="" aria-hidden="true" />简单安装</p>
+          <p class="launch-pill"><img src="./star.svg" alt="" aria-hidden="true" />MCP + agent 桥</p>
           <p class="eyebrow">在仓库里安装</p>
-          <h1>把 ChatGPT 连接到本地代码。</h1>
+          <h1>把 ChatGPT Pro 连接到本地代码代理。</h1>
           <p class="hero-lede">
-            安装 CLI，在项目里运行 setup，然后把复制好的 Server URL 粘贴到 ChatGPT Developer Mode。CodexPro 会处理本地 server、token、tunnel 和 workspace 工具。
+            安装 CLI，在项目里运行 setup，然后把复制好的 Server URL 粘贴到 ChatGPT Developer Mode。Pro Agent Bridge 会处理本地 server、token、tunnel、workspace 工具，以及交给 Claude Code / Codex / 其他本地执行器的 handoff。
           </p>
           <div class="install-line" role="group" aria-label="安装命令">
             <code>npm install -g codexpro
@@ -52,16 +52,16 @@ codexpro setup</code>
             <span>AGENTS.md 上下文</span>
             <span>.ai-bridge handoff</span>
             <span>紧凑卡片</span>
-            <span>Codex session metadata 可选开启</span>
+            <span>Claude Code handoff</span>
           </div>
           <div class="hero-actions">
-            <a class="button primary" href="#quickstart">安装 CodexPro</a>
-            <a class="button secondary star-button" href="https://github.com/rebel0789/codexpro"><img src="./star.svg" alt="" aria-hidden="true" />GitHub 点星</a>
+            <a class="button primary" href="#quickstart">安装 Pro Agent Bridge</a>
+            <a class="button secondary star-button" href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge"><img src="./star.svg" alt="" aria-hidden="true" />GitHub 点星</a>
             <a class="button secondary" href="https://www.npmjs.com/package/codexpro">查看 npm</a>
           </div>
         </div>
 
-        <div class="hero-visual" aria-label="CodexPro 工作区预览">
+        <div class="hero-visual" aria-label="Pro Agent Bridge 工作区预览">
           <div class="workspace-demo">
             <div class="demo-status">
               <span class="status-dot" aria-hidden="true"></span>
@@ -378,11 +378,11 @@ codexpro start</code></pre>
           </article>
         </div>
         <div class="link-row" aria-label="中文文档链接">
-          <a class="star-link" href="https://github.com/rebel0789/codexpro"><img src="./star.svg" alt="" aria-hidden="true" />GitHub 点星</a>
-          <a href="https://github.com/rebel0789/codexpro/blob/main/README_ZH.md">中文 README</a>
-          <a href="https://github.com/rebel0789/codexpro/blob/main/FAQ_ZH.md">中文 FAQ</a>
-          <a href="https://github.com/rebel0789/codexpro/blob/main/DOMAIN_SETUP.md">稳定 URL 指南</a>
-          <a href="https://github.com/rebel0789/codexpro/blob/main/SECURITY.md">安全说明</a>
+          <a class="star-link" href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge"><img src="./star.svg" alt="" aria-hidden="true" />GitHub 点星</a>
+          <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/README_ZH.md">中文 README</a>
+          <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/FAQ_ZH.md">中文 FAQ</a>
+          <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/DOMAIN_SETUP.md">稳定 URL 指南</a>
+          <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/SECURITY.md">安全说明</a>
         </div>
       </section>
 
@@ -404,11 +404,11 @@ codexpro start</code></pre>
     </main>
 
     <footer class="site-footer">
-      <span>CodexPro</span>
-      <a class="star-link" href="https://github.com/rebel0789/codexpro"><img src="./star.svg" alt="" aria-hidden="true" />GitHub 点星</a>
+      <span>Pro Agent Bridge</span>
+      <a class="star-link" href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge"><img src="./star.svg" alt="" aria-hidden="true" />GitHub 点星</a>
       <a href="https://www.npmjs.com/package/codexpro">npm</a>
       <a href="./index.html">English</a>
-      <a href="https://github.com/rebel0789/codexpro/blob/main/SECURITY.md">安全说明</a>
+      <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/SECURITY.md">安全说明</a>
     </footer>
 
     <script src="./script.js"></script>
