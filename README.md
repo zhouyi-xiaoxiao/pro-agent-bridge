@@ -1,49 +1,37 @@
-<p align="center">
-  <img src="docs/favicon.svg" width="72" height="72" alt="Pro Agent Bridge logo">
-</p>
+# Pro Agent Bridge
 
-<h1 align="center">Pro Agent Bridge</h1>
+A local MCP server that lets ChatGPT Pro work on one repository on your machine (read, search, make exact edits, run safe checks) and hand a written plan to Claude Code, which runs in a terminal you start, then read the result back for review.
 
-<p align="center">
-  Bridge ChatGPT Pro / Extended Pro to local Codex, Claude Code, and MCP agent workflows.
-</p>
+It is a continuation of [CodexPro](https://github.com/rebel0789/codexpro) by rebel0789, used under the MIT licence. The foundation, the `codexpro` command name and most of this manual come from upstream. What this repository adds, written by Xiaoxiao Zhouyi ([zhouyixiaoxiao.com](https://zhouyixiaoxiao.com/)) on 27–29 June 2026:
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/codexpro"><img alt="npm" src="https://img.shields.io/npm/v/codexpro?style=flat-square"></a>
-  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/zhouyi-xiaoxiao/pro-agent-bridge/ci.yml?branch=main&style=flat-square"></a>
-  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/zhouyi-xiaoxiao/pro-agent-bridge?style=flat-square"></a>
-  <a href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/"><img alt="Website" src="https://img.shields.io/badge/site-GitHub%20Pages-67e8f9?style=flat-square"></a>
-</p>
+- **Hand-off to Claude Code.** `handoff_to_claude_code` writes a plan, a watcher you run locally (`codexpro watch-handoff --agent claude-code`) executes it, and `handoff_poll` lets ChatGPT read the status, log and diff.
+- **Project memory for long planning sessions.** `read_project_context`, `search_project_memory`, `save_chat_summary` and `write_detailed_solution` keep plans and decisions in `.ai-bridge/` inside the repository.
+- **Saved chat sessions.** `save_chat_session`, `list_saved_chat_sessions` and `read_saved_chat_session`, plus an optional Chrome capture helper (`codexpro capture-chatgpt-session`).
+- **Hardened hand-off.** Polling and watcher execution were hardened against races, and a failed plan stays queued so it can be retried.
 
-<p align="center">
-  <a href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/">Website</a>
-  ·
-  <a href="README_ZH.md">中文 README</a>
-  ·
-  <a href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/zh.html">中文网站</a>
-  ·
-  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge">Star on GitHub</a>
-  ·
-  <a href="https://www.npmjs.com/package/codexpro">npm</a>
-  ·
-  <a href="DOMAIN_SETUP.md">Stable URL guide</a>
-  ·
-  <a href="FAQ.md">FAQ</a>
-  ·
-  <a href="SECURITY.md">Security</a>
-</p>
+The design is in [EXTENDED_PRO_CLAUDE_BRIDGE.md](EXTENDED_PRO_CLAUDE_BRIDGE.md) and [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md).
+
+**Status.** The code was branched from CodexPro's main branch on 26 June 2026 (version 0.28.5) and last changed on 29 June 2026. As of November 2026 it is in daily use by its author. Upstream has moved on since then, and the npm package `codexpro` (0.30.x) does not include the additions above.
+
+[中文 README](README_ZH.md) · [FAQ](FAQ.md) · [Security](SECURITY.md) · [Stable URL guide](DOMAIN_SETUP.md) · [Changelog](CHANGELOG.md)
 
 ## Installation
 
-Pro Agent Bridge is currently shipped through the `codexpro` CLI for compatibility. It requires Node.js 20+ and a ChatGPT Plus or Pro account with Apps / Developer Mode access.
+Requirements: Node.js 20 or later, and a ChatGPT Plus or Pro account with Apps / Developer Mode access.
 
-Install the CLI:
+`npm install -g codexpro` installs upstream CodexPro, not this repository. To run this version, build it from source and install it globally from the folder:
 
 ```bash
-npm install -g codexpro
+git clone https://github.com/zhouyi-xiaoxiao/pro-agent-bridge.git
+cd pro-agent-bridge
+npm install
+npm run build
+npm install -g .
 ```
 
-Then run setup inside the repo you want ChatGPT to work on:
+This puts `codexpro`, `codexpro-claude-handoff` and `codexpro-capture-chatgpt` on your `PATH`, in place of any upstream `codexpro`. The global command links to the folder, so keep the folder where it is.
+
+Then run setup inside the repository you want ChatGPT to work on:
 
 ```bash
 cd /path/to/your/repo
@@ -66,7 +54,7 @@ Pro Agent Bridge is not a rate-limit bypass, model proxy, hosted SaaS, or OS san
 
 | Need | Use |
 | --- | --- |
-| Fast first setup | `npm install -g codexpro`, then `codexpro setup` |
+| Fast first setup | build from source (see Installation), then `codexpro setup` |
 | Daily start | `codexpro start` from the same repo |
 | Stable ChatGPT URL | ngrok free dev domain or Cloudflare named tunnel |
 | Smallest tool surface | default `CODEXPRO_TOOL_MODE=standard` |
@@ -354,18 +342,16 @@ After enabling cards, upgrading, or changing widget metadata, open the CodexPro 
 
 ## Other Install Paths
 
-No-install fallback:
+Upstream's no-install fallback runs upstream CodexPro, without the Claude Code hand-off, project memory and saved-session tools described above:
 
 ```bash
 npx codexpro@latest start --root /absolute/path/to/your/repo
 ```
 
-From source:
+To run this repository without installing it globally, build it as in [Installation](#installation) and call the launcher directly:
 
 ```bash
-cd codexpro
-npm install
-npm run build
+node /path/to/pro-agent-bridge/scripts/codexpro.mjs start --root /absolute/path/to/your/repo
 ```
 
 ## CodexPro Start

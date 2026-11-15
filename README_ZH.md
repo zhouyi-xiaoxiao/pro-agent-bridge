@@ -1,47 +1,35 @@
-<p align="center">
-  <img src="docs/favicon.svg" width="72" height="72" alt="Pro Agent Bridge logo">
-</p>
+# Pro Agent Bridge
 
-<h1 align="center">Pro Agent Bridge</h1>
+一个本地 MCP 服务器：让 ChatGPT Pro 在你电脑上的某一个仓库里工作（读文件、搜索、精确编辑、运行安全的检查命令），再把写好的计划交给 Claude Code。Claude Code 在你自己启动的终端里执行，ChatGPT 再把结果读回来审阅。
 
-<p align="center">
-  把 ChatGPT Pro / Extended Pro 连接到本地 Codex、Claude Code 和 MCP agent 工作流。
-</p>
+它延续自 rebel0789 以 MIT 许可开源的 [CodexPro](https://github.com/rebel0789/codexpro)。地基、`codexpro` 这个命令名和本手册的大部分内容都来自上游。本仓库在此之上新增的部分由周易潇潇（[zhouyixiaoxiao.com](https://zhouyixiaoxiao.com/)）于 2026 年 6 月 27–29 日完成：
 
-<p align="center">
-  <a href="https://www.npmjs.com/package/codexpro"><img alt="npm" src="https://img.shields.io/npm/v/codexpro?style=flat-square"></a>
-  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/zhouyi-xiaoxiao/pro-agent-bridge/ci.yml?branch=main&style=flat-square"></a>
-  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/github/license/zhouyi-xiaoxiao/pro-agent-bridge?style=flat-square"></a>
-  <a href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/zh.html"><img alt="中文站点" src="https://img.shields.io/badge/site-%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3-67e8f9?style=flat-square"></a>
-</p>
+- **交给 Claude Code 执行**：`handoff_to_claude_code` 写出计划，本地运行的监视进程（`codexpro watch-handoff --agent claude-code`）负责执行，`handoff_poll` 让 ChatGPT 读取状态、日志和 diff。
+- **长时间规划用的项目记忆**：`read_project_context`、`search_project_memory`、`save_chat_summary`、`write_detailed_solution`，把计划和决定存在仓库内的 `.ai-bridge/` 里。
+- **会话保存**：`save_chat_session`、`list_saved_chat_sessions`、`read_saved_chat_session`，以及可选的 Chrome 抓取助手（`codexpro capture-chatgpt-session`）。
+- **加固的交接流程**：轮询和监视执行修补了竞态问题；执行失败的计划不会被消耗，可以重试。
 
-<p align="center">
-  <a href="README.md">English</a>
-  ·
-  <a href="https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/zh.html">中文网站</a>
-  ·
-  <a href="https://github.com/zhouyi-xiaoxiao/pro-agent-bridge">GitHub 点星</a>
-  ·
-  <a href="https://www.npmjs.com/package/codexpro">npm</a>
-  ·
-  <a href="DOMAIN_SETUP.md">稳定 URL 指南</a>
-  ·
-  <a href="FAQ_ZH.md">中文 FAQ</a>
-  ·
-  <a href="docs/CLAUDE_APP_USAGE_ZH.md">Claude 使用指南</a>
-  ·
-  <a href="SECURITY.md">安全说明</a>
-</p>
+设计说明见 [EXTENDED_PRO_CLAUDE_BRIDGE.md](EXTENDED_PRO_CLAUDE_BRIDGE.md) 和 [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md)。
+
+**现状**：代码于 2026 年 6 月 26 日从 CodexPro 主分支分出（版本 0.28.5），最后一次修改是 2026 年 6 月 29 日；截至 2026 年 11 月仍在作者的日常使用中。上游此后继续更新，npm 上的 `codexpro`（0.30.x）不包含上面这些新增功能。
+
+[English](README.md) · [中文 FAQ](FAQ_ZH.md) · [Claude 使用指南](docs/CLAUDE_APP_USAGE_ZH.md) · [安全说明](SECURITY.md) · [稳定 URL 指南](DOMAIN_SETUP.md)
 
 ## 安装
 
-Pro Agent Bridge 目前仍通过兼容 CLI 名称 `codexpro` 发布。它需要 Node.js 20+，以及能使用 Apps / Developer Mode 的 ChatGPT Plus 或 Pro 账号。
+需要 Node.js 20 或更高版本，以及能使用 Apps / Developer Mode 的 ChatGPT Plus 或 Pro 账号。
 
-先安装 CLI：
+`npm install -g codexpro` 装的是上游 CodexPro，不是本仓库。要用这个版本，请从源码构建，再从该目录全局安装：
 
 ```bash
-npm install -g codexpro
+git clone https://github.com/zhouyi-xiaoxiao/pro-agent-bridge.git
+cd pro-agent-bridge
+npm install
+npm run build
+npm install -g .
 ```
+
+这样 `codexpro`、`codexpro-claude-handoff` 和 `codexpro-capture-chatgpt` 就会出现在 `PATH` 里，并替换已安装的上游 `codexpro`。全局命令链接到这个目录，所以安装后不要移动或删除它。
 
 进入你想让 ChatGPT 工作的仓库，然后运行 setup：
 
@@ -108,13 +96,19 @@ CodexPro 默认给 ChatGPT 暴露纯 MCP 工具描述，不附带 widget/card me
 
 ## 其他启动方式
 
-不想全局安装时，也可以用：
+上游提供的免安装方式运行的是上游 CodexPro，不含上面说的 Claude Code 交接、项目记忆和会话保存工具：
 
 ```bash
 npx codexpro@latest start --root /absolute/path/to/your/repo
 ```
 
-但普通用户更推荐全局安装，这样命令就是固定的 `codexpro setup` 和 `codexpro start`。
+不想全局安装本仓库时，先按「安装」一节构建，再直接调用启动脚本：
+
+```bash
+node /path/to/pro-agent-bridge/scripts/codexpro.mjs start --root /absolute/path/to/your/repo
+```
+
+日常使用仍更推荐全局安装，这样命令就是固定的 `codexpro setup` 和 `codexpro start`。
 
 ## ChatGPT 中的 App 设置
 
@@ -451,4 +445,4 @@ npm run smoke
 npm audit --omit=dev
 ```
 
-如果 CodexPro 对你有用，请在 GitHub 点星。这样其他使用 ChatGPT、Codex、OpenCode、Pi 和 MCP 的开发者更容易找到它。
+如果 CodexPro 对你有用，请到上游仓库 [rebel0789/codexpro](https://github.com/rebel0789/codexpro) 点星。

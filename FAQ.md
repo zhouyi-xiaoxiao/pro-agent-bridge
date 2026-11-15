@@ -232,11 +232,13 @@ GitHub Pages gives `owner.github.io` only to the GitHub user or organization nam
 
 The `codexpro` GitHub username already exists, so this repo cannot use `codexpro.github.io` from the `rebel0789` account.
 
-The clean GitHub Pages URL for this project is:
+Upstream CodexPro's GitHub Pages site is:
 
 ```text
-https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/
+https://rebel0789.github.io/codexpro/
 ```
+
+Pro Agent Bridge has no website of its own; this README is its documentation.
 
 ## Is CodexPro production safe?
 

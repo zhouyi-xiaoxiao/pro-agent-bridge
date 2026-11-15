@@ -214,17 +214,19 @@ GitHub Pages 的 `owner.github.io` 只能由名为 `owner` 的 GitHub 用户或�
 
 `codexpro` 这个 GitHub 用户名已经存在，所以 `rebel0789` 账号下的项目不能使用 `codexpro.github.io`。
 
-当前干净的 GitHub Pages 地址是：
+上游 CodexPro 的 GitHub Pages 网站是：
 
 ```text
-https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/
+https://rebel0789.github.io/codexpro/
 ```
 
 中文页面是：
 
 ```text
-https://zhouyi-xiaoxiao.github.io/pro-agent-bridge/zh.html
+https://rebel0789.github.io/codexpro/zh.html
 ```
+
+Pro Agent Bridge 本身没有单独的网站，说明以本仓库的 README 为准。
 
 ## CodexPro 是否违反服务条款？
 
