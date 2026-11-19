@@ -29,7 +29,7 @@ npm run build
 npm install -g .
 ```
 
-这样 `codexpro`、`codexpro-claude-handoff` 和 `codexpro-capture-chatgpt` 就会出现在 `PATH` 里，并替换已安装的上游 `codexpro`。全局命令链接到这个目录，所以安装后不要移动或删除它。
+这样 `codexpro`、`codexpro-claude-handoff` 和 `codexpro-capture-chatgpt` 就会出现在 `PATH` 里（还有两个服务入口 `codexpro-mcp`、`codexpro-mcp-http`），并替换已安装的上游 `codexpro`。全局命令链接到这个目录，所以安装后不要移动或删除它。
 
 进入你想让 ChatGPT 工作的仓库，然后运行 setup：
 

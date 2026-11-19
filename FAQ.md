@@ -32,10 +32,14 @@ Short version: other tools may share the bridge idea; CodexPro is the cleaner Ch
 
 ## What is the recommended install path?
 
-Install globally once:
+Build this repository from source and install it globally from the folder (`npm install -g codexpro` would install upstream CodexPro instead):
 
 ```bash
-npm install -g codexpro
+git clone https://github.com/zhouyi-xiaoxiao/pro-agent-bridge.git
+cd pro-agent-bridge
+npm install
+npm run build
+npm install -g .
 ```
 
 Then run setup from the repo you want ChatGPT to work on:

@@ -29,7 +29,7 @@ npm run build
 npm install -g .
 ```
 
-This puts `codexpro`, `codexpro-claude-handoff` and `codexpro-capture-chatgpt` on your `PATH`, in place of any upstream `codexpro`. The global command links to the folder, so keep the folder where it is.
+This puts `codexpro`, `codexpro-claude-handoff` and `codexpro-capture-chatgpt` on your `PATH` (along with the two server entry points, `codexpro-mcp` and `codexpro-mcp-http`), in place of any upstream `codexpro`. The global command links to the folder, so keep the folder where it is.
 
 Then run setup inside the repository you want ChatGPT to work on:
 

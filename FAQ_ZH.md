@@ -10,10 +10,14 @@ CodexPro 不解锁 Developer Mode，不解锁模型，不绕过账号限制，�
 
 ## 推荐安装方式是什么？
 
-全局安装一次：
+从源码构建本仓库，再从该目录全局安装（`npm install -g codexpro` 装的是上游 CodexPro）：
 
 ```bash
-npm install -g codexpro
+git clone https://github.com/zhouyi-xiaoxiao/pro-agent-bridge.git
+cd pro-agent-bridge
+npm install
+npm run build
+npm install -g .
 ```
 
 然后进入目标仓库运行：
