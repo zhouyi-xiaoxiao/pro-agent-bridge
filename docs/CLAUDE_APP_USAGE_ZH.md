@@ -29,7 +29,7 @@ claude mcp list
 应该能看到：
 
 ```text
-pro_agent_bridge_local: node /Users/ae23069/Projects/pro-agent-bridge/dist/stdio.js - Connected
+pro_agent_bridge_local: node /path/to/pro-agent-bridge/dist/stdio.js - Connected
 ```
 
 ## 让 Claude 更容易用这套 MCP 的提示词

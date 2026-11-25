@@ -1,4 +1,6 @@
-# CodexPro 中文 FAQ
+# Pro Agent Bridge 中文 FAQ
+
+本 FAQ 大部分沿用上游 [CodexPro](https://github.com/rebel0789/codexpro)。文中说到 CodexPro 的地方，同样适用于 Pro Agent Bridge。
 
 ## 我应该用什么 ChatGPT 账号？
 
@@ -32,7 +34,7 @@ codexpro setup
 codexpro start
 ```
 
-`npx codexpro@latest start` 仍然可用，但普通用户更容易理解全局安装。
+`npx codexpro@latest start` 不用安装就能运行，但运行的是上游 CodexPro，不含本仓库新增的功能。
 
 ## ChatGPT 里要打开什么设置？
 

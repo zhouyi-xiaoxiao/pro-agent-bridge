@@ -1,23 +1,28 @@
 # Pro Agent Bridge
 
-A local MCP server that lets ChatGPT Pro work on one repository on your machine (read, search, make exact edits, run safe checks) and hand a written plan to Claude Code, which runs in a terminal you start, then read the result back for review.
+A local tool (an MCP server: Model Context Protocol, the standard ChatGPT uses to call outside tools) that lets ChatGPT Pro work on one repository on your machine (read, search, make exact edits, run safe checks) and hand a written plan to Claude Code, which runs in a terminal you start, then read the result back for review.
 
 It is a continuation of [CodexPro](https://github.com/rebel0789/codexpro) by rebel0789, used under the MIT licence. The foundation, the `codexpro` command name and most of this manual come from upstream. What this repository adds, written by Xiaoxiao Zhouyi ([zhouyixiaoxiao.com](https://zhouyixiaoxiao.com/)) on 27–29 June 2026:
 
-- **Hand-off to Claude Code.** `handoff_to_claude_code` writes a plan, a watcher you run locally (`codexpro watch-handoff --agent claude-code`) executes it, and `handoff_poll` lets ChatGPT read the status, log and diff.
+- **Handoff to Claude Code.** `handoff_to_claude_code` writes a plan, a watcher you run locally (`codexpro watch-handoff --agent claude-code`) executes it, and `handoff_poll` lets ChatGPT read the status, log and diff.
 - **Project memory for long planning sessions.** `read_project_context`, `search_project_memory`, `save_chat_summary` and `write_detailed_solution` keep plans and decisions in `.ai-bridge/` inside the repository.
 - **Saved chat sessions.** `save_chat_session`, `list_saved_chat_sessions` and `read_saved_chat_session`, plus an optional Chrome capture helper (`codexpro capture-chatgpt-session`).
-- **Hardened hand-off.** Polling and watcher execution were hardened against races, and a failed plan stays queued so it can be retried.
+- **Hardened handoff.** Polling and watcher execution were hardened against races, and a failed plan stays queued so it can be retried.
 
 The design is in [EXTENDED_PRO_CLAUDE_BRIDGE.md](EXTENDED_PRO_CLAUDE_BRIDGE.md) and [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md).
 
-**Status.** The code was branched from CodexPro's main branch on 26 June 2026 (version 0.28.5) and last changed on 29 June 2026. As of November 2026 it is in daily use by its author. Upstream has moved on since then, and the npm package `codexpro` (0.30.x) does not include the additions above.
+**Status.** The code was branched from CodexPro's main branch on 26 June 2026 (version 0.28.5) and last changed on 29 June 2026; later commits (November 2026) update documentation only. As of November 2026 it is in daily use by its author. Upstream has moved on since then, and the npm package `codexpro` (0.30.x) does not include the additions above.
 
-[中文 README](README_ZH.md) · [FAQ](FAQ.md) · [Security](SECURITY.md) · [Stable URL guide](DOMAIN_SETUP.md) · [Changelog](CHANGELOG.md)
+[中文 README](README_ZH.md) · [FAQ](FAQ.md) · [Security](SECURITY.md) · [Stable URL guide](docs/DOMAIN_SETUP.md) · [Changelog](CHANGELOG.md)
 
 ## Installation
 
-Requirements: Node.js 20 or later, and a ChatGPT Plus or Pro account with Apps / Developer Mode access.
+Requirements:
+
+- Node.js 20 or later.
+- A ChatGPT Plus or Pro account with Apps / Developer Mode access.
+- Developer Mode turned on in `Settings -> Apps -> Advanced settings`, with Enforce CSP left on.
+- One public tunnel: a Cloudflare quick tunnel, an ngrok free dev domain or a Cloudflare named tunnel.
 
 `npm install -g codexpro` installs upstream CodexPro, not this repository. To run this version, build it from source and install it globally from the folder:
 
@@ -50,18 +55,19 @@ Pro Agent Bridge turns ChatGPT Developer Mode into a local coding and handoff su
 
 Pro Agent Bridge is not a rate-limit bypass, model proxy, hosted SaaS, or OS sandbox. It uses ChatGPT's official Developer Mode and MCP app path to connect your own ChatGPT session to your own local repo. ChatGPT, Codex, and Claude Code remain separate product surfaces, each subject to its own plan limits, safety rules, and availability.
 
+The remainder of this manual is inherited from upstream CodexPro. Where it says CodexPro, it means Pro Agent Bridge as well.
+
 ## Quick Choices
 
-| Need | Use |
-| --- | --- |
-| Fast first setup | build from source (see Installation), then `codexpro setup` |
-| Daily start | `codexpro start` from the same repo |
-| Stable ChatGPT URL | ngrok free dev domain or Cloudflare named tunnel |
-| Smallest tool surface | default `CODEXPRO_TOOL_MODE=standard` |
-| Full diagnostics | `codexpro start --tool-mode full` |
-| No ChatGPT-triggered shell | `codexpro start --no-bash` |
-| Compact chat transcript | default bash cards; use `--bash-transcript full` only when needed |
-| Local Codex history lookup | opt in with `--codex-sessions metadata` or `read` |
+- **Fast first setup** — build from source (see Installation), then `codexpro setup`.
+- **Daily start** — `codexpro start` from the same repo.
+- **Stable ChatGPT URL** — ngrok free dev domain or Cloudflare named tunnel.
+- **Smallest tool surface** — `codexpro start --tool-mode minimal`.
+- **Recommended default** — `CODEXPRO_TOOL_MODE=standard` (no flag needed).
+- **Full diagnostics** — `codexpro start --tool-mode full`.
+- **No ChatGPT-triggered shell** — `codexpro start --no-bash`.
+- **Compact chat transcript** — default bash cards. Use `--bash-transcript full` only when needed.
+- **Local Codex history lookup** — opt in with `--codex-sessions metadata` or `read`.
 
 ## Product Boundary
 
@@ -79,7 +85,7 @@ Pro Agent Bridge is not a rate-limit bypass, model proxy, hosted SaaS, or OS san
 | Repo context | `AGENTS.md`, `.ai-bridge`, git status, git diff, selected source files |
 | Coding actions | `read`, `write`, `edit`, `search`, `show_changes` |
 | Verification | safe `bash` for focused test, lint, build, and git commands |
-| Handoff | `.ai-bridge/current-plan.md` for Codex, OpenCode, Pi, or a custom local agent |
+| Handoff | `handoff_to_claude_code` (Claude Code, run by a local watcher), or `.ai-bridge/current-plan.md` for Codex, OpenCode, Pi, or a custom local agent |
 | Fallback planning | `.ai-bridge/pro-context.md` for model surfaces that cannot call MCP tools |
 
 If one workflow is unavailable and another product surface you already have access to is still available, CodexPro lets you keep working against the same local repo without modifying or evading either product's limits.
@@ -90,21 +96,13 @@ If your ChatGPT account exposes a stronger model in the web app, and that model/
 
 The high-level shape can look similar because both use a local MCP bridge, a tunnel, and a workspace root. Pro Agent Bridge is narrower and more opinionated: it is built to make ChatGPT Developer Mode work like a practical local coding and agent-handoff surface for one repo.
 
-| CodexPro focuses on | Why it matters |
+| Pro Agent Bridge focuses on | Why it matters |
 | --- | --- |
 | ChatGPT-first coding loop | The first-run path is install, setup in a repo, paste one Server URL, then let ChatGPT inspect, edit, verify, and review that workspace. |
 | Explicit safety modes | Bash, write/edit, tool catalog size, Codex session reads, and handoff execution are separate controls instead of one broad remote-control switch. |
 | Repo-backed continuity | `AGENTS.md` and `.ai-bridge/*` keep durable project context in the repo, not hidden in a chat transcript or one machine-local UI state. |
 | Reviewable outputs | Tool cards, diffs, `show_changes`, smoke tests, and handoff status files are designed so users can see what changed before trusting it. |
 | TOS-safe product boundary | CodexPro does not proxy models, pool accounts, scrape third-party Pro sites, bypass quotas, or pretend to be an OS sandbox. |
-
-So the short answer is: generic workspace bridges may share the transport idea, but CodexPro is positioned as the cleaner ChatGPT-to-local-repo coding product with stricter defaults, clearer admin controls, and a repo-first agent workflow.
-
-## Preview
-
-![CodexPro preview](docs/og.svg)
-
-The website and ChatGPT cards are designed to keep repo inventory, git details, terminal output, and raw diffs folded until you ask for them. The normal path is a compact card plus a clear diff or verification result, not a chat full of raw tool data.
 
 ## Feature Map
 
@@ -120,23 +118,13 @@ The website and ChatGPT cards are designed to keep repo inventory, git details, 
 
 CodexPro is not an OS sandbox. It is a local developer bridge with safety defaults. Read [SECURITY.md](SECURITY.md) before exposing it through a tunnel.
 
-## Requirements
-
-```text
-Node.js 20+
-ChatGPT Plus or Pro account with Apps / Developer Mode access
-Developer mode enabled from Settings -> Apps -> Advanced settings
-Enforce CSP in developer mode kept enabled
-One public tunnel option: Cloudflare quick tunnel, ngrok free dev domain, or Cloudflare named tunnel
-```
-
 Current testing shows free / Go ChatGPT accounts do not expose the app flow needed for CodexPro. Use Plus or Pro for the best experience.
 
 Account tier and model tool support are separate things. Plus/Pro can expose Apps / Developer Mode, but a specific model surface may still be unable to call the connector. Use Pro context fallback for those sessions.
 
-## Status
+## Safety defaults and limits
 
-CodexPro is a public open-source MCP bridge with conservative defaults: workspace-only writes, safe bash by default, blocked secret paths, token-protected public URLs, and optional compact visual cards.
+Pro Agent Bridge (like upstream CodexPro) is a local MCP bridge with conservative defaults: workspace-only writes, safe bash by default, blocked secret paths, token-protected public URLs, and optional compact visual cards.
 
 CodexPro does not bypass, avoid, increase, pool, resell, or modify ChatGPT, Codex, OpenAI, or third-party model limits. It does not provide models or account access. It only exposes local repo tools to the ChatGPT session the user already controls through official MCP and Developer Mode.
 
@@ -147,7 +135,7 @@ ChatGPT can do MCP-backed agentic coding in your local repo, while Codex remains
 CodexPro is designed for the official ChatGPT Developer Mode / MCP app path:
 
 - It exposes local workspace files, git state, safe verification commands, and `.ai-bridge` handoff files selected by the user.
-- It does not ask for raw ChatGPT transcripts or broad conversation history. Context exports use explicit workspace files and bounded previews.
+- The MCP server does not fetch ChatGPT conversations itself. It can read only sessions you have explicitly saved into `.ai-bridge/chat-sessions/`; the optional `capture-chatgpt-session` helper, which you run yourself, saves the conversation open in your own Chrome window to that folder on your machine, and nothing is sent elsewhere.
 - It does not scrape or act as pass-through middleware for third-party services unless the user connects an authorized local integration that follows that service's terms.
 - It does not automate ChatGPT, Codex, or terminal approval flows to bypass product security, rate limits, quota limits, account access, or review prompts.
 - Remote MCP tools do not execute Codex/OpenCode/Pi/local agents. Agent execution is a separate user-started CLI/watch process on the user's machine.
@@ -208,7 +196,7 @@ Full mode adds:
 - `codex_context` — load Codex-style context in one call: AGENTS instructions for a target path, `.ai-bridge` files, and optional git status/diff.
 - `handoff_to_codex` — compatibility wrapper for `handoff_to_agent` with `agent=codex`.
 
-Local-only companion command:
+Local-only companion commands:
 
 - `codexpro execute-handoff` — run a previously written `.ai-bridge/current-plan.md` through a local agent, then collect status, logs, and git diff. This is intentionally a CLI command, not a remote MCP tool.
 - `codexpro watch-handoff` — watch `.ai-bridge/current-plan.md` locally and run a new plan through a configured agent when its content hash changes. Failed plan hashes are not consumed, so rerunning retries the same plan. This is also CLI-only and is not exposed as a remote MCP tool.
@@ -216,7 +204,7 @@ Local-only companion command:
 - `codexpro-claude-handoff` — helper used by `--agent claude-code` to invoke the local Claude Code CLI with a handoff prompt.
 - `codexpro capture-chatgpt-session` — optional local Chrome scroll-capture helper for the currently open ChatGPT conversation. It writes explicit saved-session JSONL under `.ai-bridge/chat-sessions/` for later `read_saved_chat_session` use, preserves duplicate identical turns, has a default transcript size and secret guard, and supports `--dry-run` plus `--allow-sensitive` when intentionally storing a full private transcript.
 
-On macOS, `codexpro-claude-handoff` automatically passes the current system proxy from `scutil --proxy` to the child `claude` process when `HTTP_PROXY`, `HTTPS_PROXY`, and `ALL_PROXY` are not already set. This helps when Claude Web works in Chrome through a local proxy, but direct terminal Claude Code calls receive `403 Request not allowed`.
+On macOS, `codexpro-claude-handoff` passes the system proxy settings (`scutil --proxy`) to the child `claude` process when `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` are unset, so the handoff uses the same network settings as the rest of the system.
 
 The watcher is the safer way to automate handoff execution from ChatGPT Web. ChatGPT writes the plan through `handoff_to_agent`; the user-started local watcher notices the new plan and runs Pi, OpenCode, Codex, or a restricted custom command from the terminal:
 
@@ -342,7 +330,7 @@ After enabling cards, upgrading, or changing widget metadata, open the CodexPro 
 
 ## Other Install Paths
 
-Upstream's no-install fallback runs upstream CodexPro, without the Claude Code hand-off, project memory and saved-session tools described above:
+Upstream's no-install fallback runs upstream CodexPro, without the Claude Code handoff, project memory and saved-session tools described above:
 
 ```bash
 npx codexpro@latest start --root /absolute/path/to/your/repo
@@ -1018,7 +1006,7 @@ repo B  port 8788  codexpro-b.ngrok-free.dev
 
 Do not point two running repositories at the same local port or the same ngrok/Cloudflare hostname. The second process will fail because the port or public hostname is already owned by the first process.
 
-For Namecheap and custom-domain setup, read [DOMAIN_SETUP.md](DOMAIN_SETUP.md). The key point is that a stable domain can solve your own repeated ChatGPT connector setup now, but a single shared URL for every future user needs a hosted relay or per-user tunnel routing.
+For Namecheap and custom-domain setup, read [docs/DOMAIN_SETUP.md](docs/DOMAIN_SETUP.md). The key point is that a stable domain can solve your own repeated ChatGPT connector setup now, but a single shared URL for every future user needs a hosted relay or per-user tunnel routing.
 
 If ChatGPT does not let you edit an existing app's Server URL, do not use quick tunnels for daily work. Use `codexpro stable` with a Cloudflare named tunnel and put the stable URL into ChatGPT once:
 
@@ -1252,7 +1240,7 @@ After each meaningful change, update .ai-bridge/agent-status.md with:
 Keep .ai-bridge/decisions.md aligned with implementation choices. Save the final review diff to .ai-bridge/implementation-diff.patch when practical. Do not overwrite .ai-bridge/current-plan.md unless asked.
 ```
 
-## Demo prompt matching the screenshots
+## Demo prompt
 
 Default `codexpro start` is already workspace-write normal coding mode.
 
@@ -1298,7 +1286,7 @@ npm pack --dry-run
 
 The package should not include local runtime reports, `.ai-bridge`, `.env` files, tunnel tokens, or generated tarballs.
 
-For the extended ChatGPT Pro / Claude Code architecture and capability matrix, see [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md). For public release gates, see [PUBLIC_LAUNCH_CHECKLIST.md](PUBLIC_LAUNCH_CHECKLIST.md). For contribution and security boundaries, see [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
+For the extended ChatGPT Pro / Claude Code architecture and capability matrix, see [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md). For public release gates, see [docs/PUBLIC_LAUNCH_CHECKLIST.md](docs/PUBLIC_LAUNCH_CHECKLIST.md). For contribution and security boundaries, see [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
 ## License
 

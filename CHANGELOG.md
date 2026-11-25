@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## Pro Agent Bridge additions (27–29 June 2026)
+
+- Added Claude Code handoff with `handoff_to_claude_code`, `watch-handoff --agent claude-code`, and `handoff_poll`.
+- Added project memory tools for plans, decisions, summaries, and detailed solutions.
+- Added saved chat sessions and the optional `capture-chatgpt-session` helper.
+- Hardened polling and watcher execution, with failed plans retained for retry.
+- `read_saved_chat_session` streams a saved session line by line and returns a bounded number of messages with the file's SHA-256; `.ai-bridge` files are written with private permissions; saved summaries and sessions reject secret-looking values unless `allow_sensitive` is set.
+
+## Upstream CodexPro (unreleased at branch point, 26 June 2026)
 
 - Made ChatGPT tool-card descriptor metadata opt-in with `CODEXPRO_TOOL_CARDS=1`, so default `tools/list` responses stay plain MCP and avoid fragile widget metadata during tool discovery.
 - Added `codexpro loop-handoff` for bounded local execute/review loops over `.ai-bridge/current-plan.md`, with a required local `--review-command`, `--max-iters`, dry-run preview, optional test command capture, and stop conditions for no diff, repeated diff, missing follow-up plans, reviewer errors, and human cancellation.

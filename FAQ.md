@@ -1,4 +1,6 @@
-# CodexPro FAQ
+# Pro Agent Bridge FAQ
+
+Most of this FAQ is inherited from upstream [CodexPro](https://github.com/rebel0789/codexpro). Where it says CodexPro, it means Pro Agent Bridge as well.
 
 ## Which ChatGPT account should I use?
 
@@ -28,8 +30,6 @@ The main differences are:
 - The normal workflow emphasizes compact cards, diffs, `show_changes`, smoke tests, and handoff status files.
 - CodexPro keeps a strict boundary: no model proxying, account pooling, third-party Pro site scraping, quota bypassing, or OS sandbox claims.
 
-Short version: other tools may share the bridge idea; CodexPro is the cleaner ChatGPT-to-local-repo coding agent workflow with stricter defaults and clearer review surfaces.
-
 ## What is the recommended install path?
 
 Build this repository from source and install it globally from the folder (`npm install -g codexpro` would install upstream CodexPro instead):
@@ -54,7 +54,7 @@ After setup, daily startup from that same repo is:
 codexpro start
 ```
 
-`npx codexpro@latest start` still works as a no-install fallback, but the global install is easier for normal users.
+`npx codexpro@latest start` runs without installing anything, but it runs upstream CodexPro, without the additions in this repository.
 
 ## What do I enable in ChatGPT?
 

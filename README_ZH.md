@@ -1,6 +1,6 @@
 # Pro Agent Bridge
 
-一个本地 MCP 服务器：让 ChatGPT Pro 在你电脑上的某一个仓库里工作（读文件、搜索、精确编辑、运行安全的检查命令），再把写好的计划交给 Claude Code。Claude Code 在你自己启动的终端里执行，ChatGPT 再把结果读回来审阅。
+一个本地 MCP 服务器（MCP 即 Model Context Protocol，ChatGPT 调用外部工具的标准协议）：让 ChatGPT Pro 在你电脑上的某一个仓库里工作（读文件、搜索、精确编辑、运行安全的检查命令），再把写好的计划交给 Claude Code。Claude Code 在你自己启动的终端里执行，ChatGPT 再把结果读回来审阅。
 
 它延续自 rebel0789 以 MIT 许可开源的 [CodexPro](https://github.com/rebel0789/codexpro)。地基、`codexpro` 这个命令名和本手册的大部分内容都来自上游。本仓库在此之上新增的部分由周易潇潇（[zhouyixiaoxiao.com](https://zhouyixiaoxiao.com/)）于 2026 年 6 月 27–29 日完成：
 
@@ -11,9 +11,9 @@
 
 设计说明见 [EXTENDED_PRO_CLAUDE_BRIDGE.md](EXTENDED_PRO_CLAUDE_BRIDGE.md) 和 [TECHNICAL_ARCHITECTURE.md](TECHNICAL_ARCHITECTURE.md)。
 
-**现状**：代码于 2026 年 6 月 26 日从 CodexPro 主分支分出（版本 0.28.5），最后一次修改是 2026 年 6 月 29 日；截至 2026 年 11 月仍在作者的日常使用中。上游此后继续更新，npm 上的 `codexpro`（0.30.x）不包含上面这些新增功能。
+**现状**：代码于 2026 年 6 月 26 日从 CodexPro 主分支分出（版本 0.28.5），最后一次修改是 2026 年 6 月 29 日；2026 年 11 月的后续提交只更新文档。截至 2026 年 11 月仍在作者的日常使用中。上游此后继续更新，npm 上的 `codexpro`（0.30.x）不包含上面这些新增功能。
 
-[English](README.md) · [中文 FAQ](FAQ_ZH.md) · [Claude 使用指南](docs/CLAUDE_APP_USAGE_ZH.md) · [安全说明](SECURITY.md) · [稳定 URL 指南](DOMAIN_SETUP.md)
+[English](README.md) · [中文 FAQ](FAQ_ZH.md) · [Claude 使用指南](docs/CLAUDE_APP_USAGE_ZH.md) · [安全说明](SECURITY.md) · [稳定 URL 指南](docs/DOMAIN_SETUP.md)
 
 ## 安装
 
@@ -50,7 +50,11 @@ Pro Agent Bridge 把 ChatGPT Developer Mode 变成本地仓库的 MCP 代码与 
 
 Pro Agent Bridge 不是速率限制绕过工具。它不会绕过、提升、合并、转售或修改 ChatGPT、Codex、Claude Code、OpenAI、Anthropic 或第三方模型的限制。它只是通过官方 Developer Mode / MCP App 路径，把你自己的 ChatGPT 会话连接到你自己的本地仓库和本地执行器。
 
+MCP 服务不会自行获取 ChatGPT 对话。它只读取你明确保存到仓库 `.ai-bridge/chat-sessions/` 的会话；可选的 `capture-chatgpt-session` 助手只有在你主动运行时，才把你自己 Chrome 窗口里打开的那段对话保存到本机的这个目录，不会发送到别处。
+
 如果 Codex 或 Claude Code 的某个工作流暂时不可用，而你的 ChatGPT 页面仍然可用，Pro Agent Bridge 可以让你继续在同一个本地仓库上工作。反过来也一样：ChatGPT 负责高上下文规划，Codex、Claude Code、OpenCode、Pi 或其他本地执行器负责终端里的实际执行。
+
+下文大部分沿用上游 CodexPro 的手册。文中说到 CodexPro 的地方，同样适用于 Pro Agent Bridge。
 
 ## 适合谁
 
@@ -222,7 +226,7 @@ codexpro pro-apply --root /absolute/path/to/your/repo --file plan.md
 
 这会写入 `.ai-bridge/current-plan.md`，再交给 Codex、OpenCode、Pi 或自定义本地代理执行。
 
-如果你的 ChatGPT 账号已经在 Web 产品里提供 GPT-5.5 或更强模型，并且该模型界面可以调用 Developer Mode Apps，CodexPro 可以让它通过 MCP 使用本地仓库工具。CodexPro 不提供、不代理、不转售、也不解锁模型。
+如果你的 ChatGPT 账号在 Web 产品里提供更强的模型，并且该模型界面可以调用 Developer Mode Apps，CodexPro 可以让它通过 MCP 使用本地仓库工具。CodexPro 不提供、不代理、不转售、也不解锁模型。
 
 ## 稳定 URL 怎么选
 
@@ -288,7 +292,7 @@ cloudflared tunnel route dns codexpro codexpro.example.com
 codexpro stable --hostname codexpro.example.com --tunnel-name codexpro
 ```
 
-更多域名细节见 [DOMAIN_SETUP.md](DOMAIN_SETUP.md)。
+更多域名细节见 [docs/DOMAIN_SETUP.md](docs/DOMAIN_SETUP.md)。
 
 ## Codex 风格上下文
 

@@ -6,7 +6,7 @@ Pro Agent Bridge extends the CodexPro-compatible CLI from a direct ChatGPT-to-wo
 2. A local terminal process runs the plan with Claude Code, Codex, OpenCode, Pi, or a custom executor.
 3. ChatGPT Pro polls `.ai-bridge` artifacts to review status, logs, and diffs.
 
-The bridge does not unlock models, proxy model access, scrape ChatGPT, or bypass product limits. It exposes local workspace tools to a compatible ChatGPT Developer Mode session that you already control.
+The bridge does not unlock models, proxy model access, or bypass product limits. The optional capture helper only reads the conversation open in your own browser, and only when you run it. It exposes local workspace tools to a compatible ChatGPT Developer Mode session that you already control.
 
 ## New MCP Tools
 
@@ -46,7 +46,7 @@ That helper calls the local Claude Code CLI with `claude -p <handoff prompt>`. I
 
 `codexpro-claude-handoff` keeps handoff plans under a conservative argv-size limit. For unusually large plans, use a custom `codexpro watch-handoff --agent custom --command ...` that streams or reads the plan file directly.
 
-On macOS, if no proxy environment variables are already set, `codexpro-claude-handoff` reads the current system proxy with `scutil --proxy` and passes that proxy only to the child `claude` process. This keeps Claude Code handoff usable on machines where Chrome works through the system proxy but terminal commands would otherwise hit Anthropic or Cloudflare `403 Request not allowed`.
+On macOS, if no proxy environment variables are already set, `codexpro-claude-handoff` reads the system proxy settings with `scutil --proxy` and passes them only to the child `claude` process, so the handoff uses the same network settings as the rest of the system.
 
 Useful optional environment variables:
 
@@ -54,7 +54,6 @@ Useful optional environment variables:
 # Advanced passthrough for Claude Code flags not exposed by CodexPro:
 CLAUDE_HANDOFF_ARGS="--model claude-sonnet-4-5"
 CLAUDE_HANDOFF_BIN="/path/to/claude"
-HTTPS_PROXY="http://127.0.0.1:6382"
 ```
 
 `CLAUDE_BIN` is also accepted for compatibility with older local setups. Explicit `HTTP_PROXY`, `HTTPS_PROXY`, or `ALL_PROXY` values take precedence over macOS system-proxy detection.
@@ -133,7 +132,7 @@ claude mcp list
 claude -p --model sonnet --no-session-persistence --tools '' -- 'Reply exactly CODEXPRO_CLAUDE_SMOKE_OK.'
 ```
 
-If the final command returns `403 Request not allowed`, Claude Code is installed and may even be logged in, but Anthropic's first-party API path is refusing the model request. Refresh auth with `claude auth login` or `claude setup-token`, or fix the account/network policy. On macOS systems with a working browser proxy, retry the smoke with the same proxy exported, for example `HTTPS_PROXY=http://127.0.0.1:6382 HTTP_PROXY=http://127.0.0.1:6382 ALL_PROXY=socks5h://127.0.0.1:6382 claude -p ...`, then rerun the smoke before relying on `--agent claude-code`.
+If the final command returns `403 Request not allowed`, Claude Code is installed and may even be logged in, but Anthropic's first-party API path is refusing the model request. Refresh auth with `claude auth login` or `claude setup-token`, or check the account and network settings, then rerun the smoke before relying on `--agent claude-code`.
 
 ## Files Created in `.ai-bridge`
 
